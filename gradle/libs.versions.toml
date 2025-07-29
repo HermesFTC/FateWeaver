@@ -1,0 +1,28 @@
+[versions]
+kotlin = "2.0.0"
+android = "8.6.1"
+ftcsdk = "10.3.0"
+kotlinxSerialization = "1.8.0"
+kotlinxDatetime = "0.6.2"
+deployer = "0.18.0"
+wpilib = "2025.3.2"
+
+[libraries]
+ftcsdk-common = { module = "org.firstinspires.ftc:FtcCommon", version.ref = "ftcsdk" }
+ftcsdk-robotcore = { module = "org.firstinspires.ftc:RobotCore", version.ref = "ftcsdk" }
+ftcsdk-hardware = { module = "org.firstinspires.ftc:Hardware", version.ref = "ftcsdk" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
+kotlinx-serialization-protobuf = { module = "org.jetbrains.kotlinx:kotlinx-serialization-protobuf", version.ref = "kotlinxSerialization" }
+kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "kotlinxDatetime" }
+wpiutil = { module = "edu.wpi.first.wpiutil:wpiutil-java", version.ref = "wpilib" }
+
+[bundles]
+ftcsdk = ["ftcsdk-common", "ftcsdk-robotcore", "ftcsdk-hardware"]
+
+[plugins]
+android-library = { id = "com.android.library", version.ref = "android" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+dokka = { id = "org.jetbrains.dokka", version.ref = "kotlin" }
+deployer = { id = "io.deepmedia.tools.deployer", version.ref = "deployer" }
