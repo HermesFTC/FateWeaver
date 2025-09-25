@@ -7,5 +7,14 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.serialization.protobuf)
     implementation(libs.kotlinx.datetime)
-    api(libs.wpiutil)
+    implementation(kotlin("reflect"))
+
+    implementation(libs.quickbuf)
+
+    testImplementation(kotlin("test"))
+    testImplementation(libs.junit.jupiter)
+}
+
+tasks.test {
+    useJUnitPlatform()
 }

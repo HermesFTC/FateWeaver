@@ -12,7 +12,7 @@ allprojects {
     repositories {
         google()
         mavenCentral()
-        maven("https://frcmaven.wpi.edu/artifactory/release/")
+        maven("https://repo.dairy.foundation/releases")
     }
 }
 

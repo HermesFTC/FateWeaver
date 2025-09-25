@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "me.zharel.hermes.fateweaver"
+    namespace = "gay.zharel.hermes.fateweaver"
     //noinspection GradleDependency
     compileSdk = 33
 
@@ -14,22 +14,25 @@ android {
     }
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
+
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
     }
+}
 
-    kotlinOptions {
-        jvmTarget = "1.8"
-        freeCompilerArgs += ("-Xjvm-default=all")
-    }
+kotlin {
+    jvmToolchain(8)
 }
 
 dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.serialization.protobuf)
     implementation(libs.kotlinx.datetime)
-    api(libs.wpiutil)
+    implementation(libs.kotlin.reflect)
     implementation(libs.bundles.ftcsdk)
+
+    coreLibraryDesugaring(libs.android.desugar)
 
     api(project(":core"))
 }

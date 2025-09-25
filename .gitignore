@@ -44,3 +44,4 @@ bin/
 ### Mac OS ###
 .DS_Store
 /.idea/
+/core/src/main/resources/META-INF/lib/
