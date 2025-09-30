@@ -1,23 +1,66 @@
 # FateWeaver
 
-This project uses [Gradle](https://gradle.org/).
-To build and run the application, use the *Gradle* tool window by clicking the Gradle icon in the right-hand toolbar,
-or run it directly from the terminal:
+A RoadRunner-log based data logging library for FTC robotics.
 
-* Run `./gradlew run` to build and run the application.
-* Run `./gradlew build` to only build the application.
-* Run `./gradlew check` to run all checks, including tests.
-* Run `./gradlew clean` to clean all build outputs.
+## Installation
 
-Note the usage of the Gradle Wrapper (`./gradlew`).
-This is the suggested way to use Gradle in production projects.
+FateWeaver is available on Maven Central. Add the following dependencies to your project:
 
-[Learn more about the Gradle Wrapper](https://docs.gradle.org/current/userguide/gradle_wrapper.html).
+### Gradle (Kotlin DSL)
+```kotlin
+dependencies {
+    implementation("gay.zharel.fateweaver:ftc:VERSION")
+}
+```
 
-[Learn more about Gradle tasks](https://docs.gradle.org/current/userguide/command_line_interface.html#common_tasks).
+### Gradle (Groovy DSL)
+```gradle
+dependencies {
+    implementation 'gay.zharel.fateweaver:ftc:VERSION'
+}
+```
 
-This project follows the suggested multi-module setup and consists of the `app` and `utils` subprojects.
-The shared build logic was extracted to a convention plugin located in `buildSrc`.
+> **Note:** Replace `VERSION` with the latest version available on [Maven Central](https://central.sonatype.com/search?q=gay.zharel.fateweaver).
 
-This project uses a version catalog (see `gradle/libs.versions.toml`) to declare and version dependencies
-and both a build cache and a configuration cache (see `gradle.properties`).
+## Features
+
+- Easy-to-use logging API with `FlightRecorder` and `FlightLogChannel`!
+- Type-safe channels, including support for custom data types using reflection!
+- Downloading logs to your computer for viewing with AdvantageScope!
+- Backwards-compatibility with existing RoadRunner FlightRecorder API.
+
+## Usage
+
+This OpMode uses FateWeaver to log the robot's pose and velocity;
+while it uses classes in the RoadRunner library/quickstart,
+neither of them are required.
+
+```java
+public class MyOpMode extends OpMode {
+    MecanumDrive drive;
+    FlightLogChannel<Long> timestamps;
+    FlightLogChannel<Pose2d> poses;
+
+    @Override
+    public void init() {
+        drive = new MecanumDrive(hardwareMap, new Pose2d(0.0, 0.0, 0.0));
+        timestamps = FlightRecorder.createChannel("TIMESTAMP", LongSchema.INSTANCE);
+        poses = FlightRecorder.createChannel("Robot/Pose", Pose2d.class);
+    }
+
+    @Override
+    public void loop() {
+        drive.setDrivePowers(/* stuff */);
+        PoseVelocity2d velocity = drive.updatePoseEstimate();
+        
+        timestamps.put(System.nanoTime());
+        FlightRecorder.write('Robot/Velocity', velocity);
+        poses.put(drive.localizer.getPose());
+    }
+}
+```
+
+## Downloading Logs
+
+To download logs to your computer, simply connect your computer to the robot's WiFi network,
+and go to `192.168.43.1:8080/fate/logs` in your browser.
