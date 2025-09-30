@@ -31,6 +31,7 @@ dependencies {
     implementation(libs.kotlinx.datetime)
     implementation(libs.kotlin.reflect)
     implementation(libs.bundles.ftcsdk)
+    implementation(libs.kotlinx.html)
 
     coreLibraryDesugaring(libs.android.desugar)
 
