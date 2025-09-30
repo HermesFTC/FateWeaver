@@ -1,9 +1,8 @@
-package gay.zharel.hermes.fateweaver
+package gay.zharel.fateweaver.flight
 
 import android.annotation.SuppressLint
 import gay.zharel.fateweaver.log.FateLogWriter
 import org.firstinspires.ftc.robotcore.internal.system.AppUtil
-import java.io.File
 import java.text.SimpleDateFormat
 
 val LOG_ROOT = AppUtil.ROOT_FOLDER.resolve("FateWeaver/Logs")

@@ -1,4 +1,4 @@
-package gay.zharel.hermes.fateweaver
+package gay.zharel.fateweaver.flight
 
 import android.content.Context
 import android.content.res.AssetManager
