@@ -1,6 +1,5 @@
 package gay.zharel.hermes.fateweaver
 
-import android.annotation.SuppressLint
 import android.content.Context
 import com.qualcomm.robotcore.eventloop.opmode.OpMode
 import com.qualcomm.robotcore.eventloop.opmode.OpModeManagerImpl
