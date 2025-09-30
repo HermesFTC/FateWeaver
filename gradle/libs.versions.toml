@@ -15,6 +15,7 @@ androidDesugaring = "2.0.3"
 ftcsdk-common = { module = "org.firstinspires.ftc:FtcCommon", version.ref = "ftcsdk" }
 #noinspection Aligned16KB
 ftcsdk-robotcore = { module = "org.firstinspires.ftc:RobotCore", version.ref = "ftcsdk" }
+ftcsdk-robotserver = { module = "org.firstinspires.ftc:RobotServer", version.ref = "ftcsdk" }
 ftcsdk-hardware = { module = "org.firstinspires.ftc:Hardware", version.ref = "ftcsdk" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junitJupiter" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
@@ -29,7 +30,7 @@ psikit = { module = "org.psilynx:psikit", version.ref = "psikit" }
 android-desugar = { module = "com.android.tools:desugar_jdk_libs_nio", version.ref = "androidDesugaring" }
 
 [bundles]
-ftcsdk = ["ftcsdk-common", "ftcsdk-robotcore", "ftcsdk-hardware"]
+ftcsdk = ["ftcsdk-common", "ftcsdk-robotcore", "ftcsdk-hardware", "ftcsdk-robotserver"]
 jackson = ["jackson-core", "jackson-annotations", "jackson-databind"]
 
 [plugins]
