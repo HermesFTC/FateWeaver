@@ -7,7 +7,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 
 val LOG_ROOT = AppUtil.ROOT_FOLDER.resolve("FateWeaver/Logs")
-const val EXT = ".fate"
+const val EXT = ".fate.log"
 
 @SuppressLint("SimpleDateFormat")
 private val DATE_FORMAT = SimpleDateFormat("yyyy_MM_dd__HH_mm_ss_SSS")
