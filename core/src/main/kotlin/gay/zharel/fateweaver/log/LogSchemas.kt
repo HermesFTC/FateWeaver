@@ -21,13 +21,25 @@ sealed interface FateSchema<T> {
     val schemaSize: Int
 
     /**
-     * Encodes the entry's schema into [buffer]. Must start with the schema [tag].
+     * The schema for this type as a ByteArray.
      * The default implementation writes the tag as an integer,
-     * but this method should be overridden to include other information
+     * but this property should be overridden to include other information
      * for non-primitive schemas.
      */
+    val schema: ByteArray
+        get() {
+            val buffer = ByteBuffer.allocate(Int.SIZE_BYTES)
+            buffer.putInt(tag)
+            return buffer.array()
+        }
+
+    /**
+     * Encodes the entry's schema into [buffer]. Must start with the schema [tag].
+     * The default implementation writes the schema property,
+     * but this method can be overridden for custom behavior.
+     */
     fun encodeSchema(buffer: ByteBuffer) {
-        buffer.putInt(tag)
+        buffer.put(schema)
     }
 
     /**
@@ -129,7 +141,7 @@ object BooleanSchema : FateSchema<Boolean> {
     }
 }
 
-class EnumSchema(val enumClass: Class<out Enum<*>>) : FateSchema<Enum<*>> {
+class EnumSchema<T : Enum<T>>(val enumClass: Class<out Enum<T>>) : FateSchema<Enum<T>> {
     init {
         require(enumClass.isEnum) { "Class must be an enum" }
     }
@@ -140,7 +152,8 @@ class EnumSchema(val enumClass: Class<out Enum<*>>) : FateSchema<Enum<*>> {
         Int.SIZE_BYTES + constant.name.toByteArray(Charsets.UTF_8).size
     }
 
-    override fun encodeSchema(buffer: ByteBuffer) {
+    override val schema: ByteArray by lazy {
+        val buffer = ByteBuffer.allocate(schemaSize)
         buffer.putInt(tag)
         val constants = enumClass.enumConstants
         buffer.putInt(constants.size)
@@ -149,11 +162,12 @@ class EnumSchema(val enumClass: Class<out Enum<*>>) : FateSchema<Enum<*>> {
             buffer.putInt(bytes.size)
             buffer.put(bytes)
         }
+        buffer.array()
     }
 
-    override fun objSize(obj: Enum<*>): Int = Int.SIZE_BYTES
+    override fun objSize(obj: Enum<T>): Int = Int.SIZE_BYTES
 
-    override fun encodeObject(buffer: ByteBuffer, obj: Enum<*>) {
+    override fun encodeObject(buffer: ByteBuffer, obj: Enum<T>) {
         buffer.putInt(obj.ordinal)
     }
 }
@@ -163,9 +177,11 @@ class ArraySchema<T>(val elementSchema: FateSchema<T>) : FateSchema<Array<T>> {
 
     override val schemaSize: Int = Int.SIZE_BYTES + elementSchema.schemaSize
 
-    override fun encodeSchema(buffer: ByteBuffer) {
+    override val schema: ByteArray by lazy {
+        val buffer = ByteBuffer.allocate(schemaSize)
         buffer.putInt(tag)
-        elementSchema.encodeSchema(buffer)
+        buffer.put(elementSchema.schema)
+        buffer.array()
     }
 
     override fun objSize(obj: Array<T>): Int = Int.SIZE_BYTES + obj.sumOf {
@@ -200,15 +216,17 @@ class ReflectedClassSchema<T : Any>(
         Int.SIZE_BYTES + name.toByteArray(Charsets.UTF_8).size + schema.schemaSize
     }.sum()
 
-    override fun encodeSchema(buffer: ByteBuffer) {
+    override val schema: ByteArray by lazy {
+        val buffer = ByteBuffer.allocate(schemaSize)
         buffer.putInt(tag)
         buffer.putInt(fields.size)
         for ((name, schema) in fields) {
             val bytes = name.toByteArray(Charsets.UTF_8)
             buffer.putInt(bytes.size)
             buffer.put(bytes)
-            schema.encodeSchema(buffer)
+            buffer.put(schema.schema)
         }
+        buffer.array()
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -232,7 +250,7 @@ class ReflectedClassSchema<T : Any>(
         fun <T : Any> createFromClass(cls: KClass<T>): ReflectedClassSchema<T> {
             val fields = cls.memberProperties.associate { field ->
                 field.isAccessible = true
-                field.name to FateSchema.schemaOfClass((field.returnType.classifier as KClass<T>).java)
+                field.name to FateSchema.schemaOfClass((field.returnType.classifier as KClass<*>).java)
             }
             return ReflectedClassSchema(fields)
         }

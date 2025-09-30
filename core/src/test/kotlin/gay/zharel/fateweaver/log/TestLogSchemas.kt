@@ -281,7 +281,7 @@ class TestLogSchemas {
         assertEquals(BooleanSchema, FateSchema.schemaOfClass(Boolean::class.java))
 
         // Test enum
-        assertTrue(FateSchema.schemaOfClass(TestEnum::class.java) is EnumSchema)
+        assertTrue(FateSchema.schemaOfClass(TestEnum::class.java) is EnumSchema<*>)
 
         // Test array
         assertTrue(FateSchema.schemaOfClass(Array<Int>::class.java) is ArraySchema<*>)
@@ -308,7 +308,7 @@ class TestLogSchemas {
         // Test enum type cast - this tests the @Suppress("UNCHECKED_CAST") cast
         assertDoesNotThrow {
             val schema = FateSchema.schemaOfClass(TestEnum::class.java)
-            assertTrue(schema is EnumSchema)
+            assertTrue(schema is EnumSchema<*>)
             // Verify the enum schema was created correctly
             assertEquals(6, schema.tag)
         }
