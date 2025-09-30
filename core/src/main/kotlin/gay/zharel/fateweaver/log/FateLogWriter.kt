@@ -1,5 +1,6 @@
 package gay.zharel.fateweaver.log
 
+import gay.zharel.fateweaver.schemas.FateSchema
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream

@@ -1,5 +1,8 @@
 package gay.zharel.fateweaver.log
 
+import gay.zharel.fateweaver.schemas.DynamicEnumSchema
+import gay.zharel.fateweaver.schemas.IntSchema
+import gay.zharel.fateweaver.schemas.StringSchema
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows

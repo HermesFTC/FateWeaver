@@ -1,5 +1,15 @@
 package gay.zharel.fateweaver.log
 
+import gay.zharel.fateweaver.schemas.ArraySchema
+import gay.zharel.fateweaver.schemas.BooleanSchema
+import gay.zharel.fateweaver.schemas.DoubleSchema
+import gay.zharel.fateweaver.schemas.DynamicEnumSchema
+import gay.zharel.fateweaver.schemas.EnumSchema
+import gay.zharel.fateweaver.schemas.FateSchema
+import gay.zharel.fateweaver.schemas.IntSchema
+import gay.zharel.fateweaver.schemas.LongSchema
+import gay.zharel.fateweaver.schemas.ReflectedClassSchema
+import gay.zharel.fateweaver.schemas.StringSchema
 import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
@@ -26,43 +36,6 @@ sealed class FateLogEntry {
         val channelName: String,
         val data: T
     ) : FateLogEntry()
-}
-
-/**
- * A schema for enums that preserves the constant names for decoding.
- */
-class DynamicEnumSchema(val constantNames: List<String>) : FateSchema<String> {
-    override val tag: Int = FateSchema.Registry.ENUM.value
-    override val schemaSize: Int = Int.SIZE_BYTES + Int.SIZE_BYTES + constantNames.sumOf {
-        Int.SIZE_BYTES + it.toByteArray(Charsets.UTF_8).size
-    }
-
-    override fun encodeSchema(buffer: ByteBuffer) {
-        buffer.putInt(tag)
-        buffer.putInt(constantNames.size)
-        for (constantName in constantNames) {
-            val bytes = constantName.toByteArray(Charsets.UTF_8)
-            buffer.putInt(bytes.size)
-            buffer.put(bytes)
-        }
-    }
-
-    override fun objSize(obj: String): Int = Int.SIZE_BYTES
-
-    override fun encodeObject(buffer: ByteBuffer, obj: String) {
-        val ordinal = constantNames.indexOf(obj)
-        if (ordinal == -1) {
-            throw IllegalArgumentException("Unknown enum constant: $obj")
-        }
-        buffer.putInt(ordinal)
-    }
-
-    fun getConstantName(ordinal: Int): String {
-        if (ordinal < 0 || ordinal >= constantNames.size) {
-            throw IllegalArgumentException("Invalid enum ordinal: $ordinal. Valid range: 0-${constantNames.size - 1}")
-        }
-        return constantNames[ordinal]
-    }
 }
 
 /**
@@ -134,14 +107,12 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
                 return null // End of file
             }
 
-            val entryType = ByteBuffer.wrap(entryTypeBytes).int
-
-            return when (entryType) {
+            return when (val entryType = ByteBuffer.wrap(entryTypeBytes).int) {
                 0 -> readSchemaEntry()
                 1 -> readMessageEntry()
                 else -> throw IllegalArgumentException("Unknown entry type: $entryType")
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             return null // End of file or error
         }
     }
@@ -295,7 +266,7 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
                 // Return the actual enum constant name instead of ordinal
                 schema.getConstantName(ordinal)
             }
-            is EnumSchema -> {
+            is EnumSchema<*> -> {
                 val bytes = ByteArray(4)
                 stream.read(bytes)
                 val ordinal = ByteBuffer.wrap(bytes).int

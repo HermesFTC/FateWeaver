@@ -1,5 +1,14 @@
 package gay.zharel.fateweaver.log
 
+import gay.zharel.fateweaver.schemas.ArraySchema
+import gay.zharel.fateweaver.schemas.BooleanSchema
+import gay.zharel.fateweaver.schemas.DoubleSchema
+import gay.zharel.fateweaver.schemas.EnumSchema
+import gay.zharel.fateweaver.schemas.FateSchema
+import gay.zharel.fateweaver.schemas.IntSchema
+import gay.zharel.fateweaver.schemas.LongSchema
+import gay.zharel.fateweaver.schemas.ReflectedClassSchema
+import gay.zharel.fateweaver.schemas.StringSchema
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import java.nio.ByteBuffer

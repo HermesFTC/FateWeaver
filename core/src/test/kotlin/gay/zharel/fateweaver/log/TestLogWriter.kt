@@ -1,5 +1,10 @@
 package gay.zharel.fateweaver.log
 
+import gay.zharel.fateweaver.schemas.BooleanSchema
+import gay.zharel.fateweaver.schemas.FateSchema
+import gay.zharel.fateweaver.schemas.IntSchema
+import gay.zharel.fateweaver.schemas.LongSchema
+import gay.zharel.fateweaver.schemas.StringSchema
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayOutputStream

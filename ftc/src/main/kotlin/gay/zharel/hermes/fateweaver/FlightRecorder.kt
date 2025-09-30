@@ -8,9 +8,9 @@ import com.qualcomm.robotcore.util.RobotLog
 import com.qualcomm.robotcore.util.WebHandlerManager
 import fi.iki.elonen.NanoHTTPD
 import gay.zharel.fateweaver.log.FateLogWriter
-import gay.zharel.fateweaver.log.FateSchema
+import gay.zharel.fateweaver.schemas.FateSchema
 import gay.zharel.fateweaver.log.LogChannel
-import gay.zharel.fateweaver.log.LongSchema
+import gay.zharel.fateweaver.schemas.LongSchema
 import org.firstinspires.ftc.ftccommon.external.WebHandlerRegistrar
 import org.firstinspires.ftc.ftccommon.internal.manualcontrol.ManualControlOpMode
 import org.firstinspires.ftc.robotcore.internal.system.AppUtil
@@ -18,7 +18,6 @@ import org.firstinspires.ftc.robotcore.internal.webserver.WebHandler
 import java.io.File
 import java.io.FileInputStream
 import java.net.URLEncoder
-import java.text.SimpleDateFormat
 import kotlin.collections.filter
 import kotlin.collections.joinToString
 import kotlin.collections.map

@@ -1,4 +1,4 @@
-package gay.zharel.fateweaver.log
+package gay.zharel.fateweaver.schemas
 
 import java.nio.ByteBuffer
 import kotlin.collections.iterator
