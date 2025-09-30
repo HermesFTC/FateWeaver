@@ -2,6 +2,8 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.dokka)
+    alias(libs.plugins.deployer)
 }
 
 android {
@@ -18,6 +20,12 @@ android {
 
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
+    }
+
+    publishing {
+        singleVariant("release") {
+            withSourcesJar()
+        }
     }
 }
 
@@ -36,4 +44,24 @@ dependencies {
     coreLibraryDesugaring(libs.android.desugar)
 
     api(project(":core"))
+}
+
+val dokkaJar = tasks.register<Jar>("dokkaJar") {
+    dependsOn(tasks.named("dokkaGenerate"))
+    from(dokka.basePublicationsDirectory.dir("html"))
+    archiveClassifier.set("html-docs")
+}
+
+deployer {
+    projectInfo {
+        artifactId.set("ftc")
+        description.set("Integration of FateWeaver loggers into the FTC Lifecycle.")
+    }
+
+    content {
+        androidComponents("release") {
+            kotlinSources()
+            docs(dokkaJar)
+        }
+    }
 }
