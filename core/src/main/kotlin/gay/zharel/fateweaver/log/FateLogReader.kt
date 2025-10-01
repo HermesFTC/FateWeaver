@@ -11,7 +11,6 @@ import gay.zharel.fateweaver.schemas.IntSchema
 import gay.zharel.fateweaver.schemas.LongSchema
 import gay.zharel.fateweaver.schemas.ReflectedClassSchema
 import gay.zharel.fateweaver.schemas.StringSchema
-import gay.zharel.fateweaver.schemas.TypedClassSchema
 import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
@@ -297,23 +296,14 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
                 // Return a map of field values since we can't reconstruct the actual class
                 fieldValues
             }
-            is TypedClassSchema<*> -> {
-                val fieldValues = mutableMapOf<String, Any>()
-                for ((fieldName, fieldSchema) in schema.fields) {
-                    val fieldValue = readObject(fieldSchema)
-                    fieldValues[fieldName] = fieldValue
-                }
-                // Return a map of field values since we can't reconstruct the actual class
-                fieldValues
-            }
             is CustomStructSchema<*> -> {
-                val fieldValues = mutableMapOf<String, Any>()
-                for ((fieldName, fieldSchema) in schema.components) {
-                    val fieldValue = readObject(fieldSchema)
-                    fieldValues[fieldName] = fieldValue
+                val components = mutableMapOf<String, Any>()
+                for ((name, componentSchema) in schema.componentNames.zip(schema.componentSchemas)) {
+                    val fieldValue = readObject(componentSchema)
+                    components[name] = fieldValue
                 }
                 // Return a map of field values since we can't reconstruct the actual class
-                fieldValues
+                components
             }
         }
     }
