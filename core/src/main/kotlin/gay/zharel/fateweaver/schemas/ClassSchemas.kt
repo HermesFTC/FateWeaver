@@ -2,7 +2,6 @@ package gay.zharel.fateweaver.schemas
 
 import gay.zharel.fateweaver.schemas.TypedClassSchema.Companion.TYPE_FIELD
 import java.nio.ByteBuffer
-import java.util.SortedMap
 import kotlin.collections.component1
 import kotlin.collections.component2
 import kotlin.collections.iterator
@@ -134,27 +133,28 @@ class TypedClassSchema<T : Any>(
 
 class CustomStructSchema<T : Any>(
     val type: String,
-    val components: SortedMap<String, FateSchema<*>>,
+    val componentNames: List<String>,
+    val componentSchemas: List<FateSchema<*>>,
     val encoder: (T) -> List<Any>
 ) : FateSchema<T> {
     override val tag = FateSchema.Registry.REFLECTED_CLASS.value
 
     override val schemaSize: Int = Int.SIZE_BYTES + Int.SIZE_BYTES +
             Int.SIZE_BYTES + TYPE_FIELD.first.toByteArray().size + TYPE_FIELD.second.schemaSize +
-            components.map { (name, schema) ->
+            componentNames.zip(componentSchemas).sumOf { (name, schema) ->
                 Int.SIZE_BYTES + name.toByteArray(Charsets.UTF_8).size + schema.schemaSize
-            }.sum()
+            }
 
     override val schema: ByteArray by lazy {
         val buffer = ByteBuffer.allocate(schemaSize)
         buffer.putInt(tag)
-        buffer.putInt(components.size)
+        buffer.putInt(componentNames.size)
         TYPE_FIELD.first.toByteArray().let {
             buffer.putInt(it.size)
             buffer.put(it)
         }
         buffer.put(TYPE_FIELD.second.schema)
-        for ((name, schema) in components) {
+        for ((name, schema) in componentNames.zip(componentSchemas)) {
             val bytes = name.toByteArray(Charsets.UTF_8)
             buffer.putInt(bytes.size)
             buffer.put(bytes)
@@ -164,7 +164,7 @@ class CustomStructSchema<T : Any>(
     }
 
     @Suppress("UNCHECKED_CAST")
-    override fun objSize(obj: T): Int = TYPE_FIELD.second.objSize(type) + components.values.zip(encoder(obj)).sumOf { (schema, value) ->
+    override fun objSize(obj: T): Int = TYPE_FIELD.second.objSize(type) + componentSchemas.zip(encoder(obj)).sumOf { (schema, value) ->
         schema as FateSchema<Any>
         schema.objSize(value)
     }
@@ -172,7 +172,7 @@ class CustomStructSchema<T : Any>(
     @Suppress("UNCHECKED_CAST")
     override fun encodeObject(buffer: ByteBuffer, obj: T) {
         TYPE_FIELD.second.encodeObject(buffer, type)
-        for ((schema, value) in components.values.zip(encoder(obj))) {
+        for ((schema, value) in componentSchemas.zip(encoder(obj))) {
             schema as FateSchema<Any>
             schema.encodeObject(buffer, value)
         }
