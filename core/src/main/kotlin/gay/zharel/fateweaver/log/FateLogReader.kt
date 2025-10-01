@@ -10,6 +10,7 @@ import gay.zharel.fateweaver.schemas.IntSchema
 import gay.zharel.fateweaver.schemas.LongSchema
 import gay.zharel.fateweaver.schemas.ReflectedClassSchema
 import gay.zharel.fateweaver.schemas.StringSchema
+import gay.zharel.fateweaver.schemas.TypedClassSchema
 import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
@@ -287,6 +288,15 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
                 elements.toTypedArray()
             }
             is ReflectedClassSchema<*> -> {
+                val fieldValues = mutableMapOf<String, Any>()
+                for ((fieldName, fieldSchema) in schema.fields) {
+                    val fieldValue = readObject(fieldSchema)
+                    fieldValues[fieldName] = fieldValue
+                }
+                // Return a map of field values since we can't reconstruct the actual class
+                fieldValues
+            }
+            is TypedClassSchema<*> -> {
                 val fieldValues = mutableMapOf<String, Any>()
                 for ((fieldName, fieldSchema) in schema.fields) {
                     val fieldValue = readObject(fieldSchema)
