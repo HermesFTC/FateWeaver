@@ -144,32 +144,18 @@ val fieldCentricSchema = CustomStructSchema<RobotPose>(
 
 #### Selective Field Logging
 
-```kotlin
-class ComplexRobotState(
-    val pose: Pose2d,
-    val velocity: PoseVelocity2d,
-    val sensorData: Map<String, Double>,
-    val internalState: PrivateData,  // Don't want to log this
-    val debugInfo: String           // Only log in debug mode
-) {
-    companion object {
-        val AS_TYPE = "RobotState"
-    }
+```java
+class Pose2d {
+    public Vector2d position;
+    public Rotation2d heading;
+    
+    public static final CustomStructSchema<Pose2d> SCHEMA = new CustomStructSchema<>(
+            "Pose2d",
+            List.of("x", "y", "heading"),
+            List.of(DoubleSchema.INSTANCE, DoubleSchema.INSTANCE, DoubleSchema.INSTANCE),
+            pose -> List.of(pose.position.x, pose.position.y, pose.heading.toDouble())
+    );
 }
-
-val essentialStateSchema = CustomStructSchema<ComplexRobotState>(
-    type = "EssentialState",
-    componentNames = listOf("x", "y", "heading", "velocityMag"),
-    componentSchemas = listOf(DoubleSchema, DoubleSchema, DoubleSchema, DoubleSchema),
-    encoder = { state ->
-        listOf(
-            state.pose.position.x,
-            state.pose.position.y,
-            state.pose.heading.toDouble(),
-            sqrt(state.velocity.linearVel.x.pow(2) + state.velocity.linearVel.y.pow(2))
-        )
-    }
-)
 ```
 
 ## Downloading Logs
