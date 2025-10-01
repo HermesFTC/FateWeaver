@@ -78,7 +78,7 @@ class ClassSchemasTest {
         val schema = ReflectedClassSchema.createFromClass(SimpleStruct::class.java)
         val testStruct = SimpleStruct(42, "test", true)
 
-        assertEquals(FateSchema.Registry.REFLECTED_CLASS.value, schema.tag)
+        assertEquals(FateSchema.Registry.CUSTOM.value, schema.tag)
         assertEquals(3, schema.fields.size)
         assertTrue(schema.fields.containsKey("intField"))
         assertTrue(schema.fields.containsKey("stringField"))
@@ -92,7 +92,7 @@ class ClassSchemasTest {
         schema.encodeObject(buffer, testStruct)
         buffer.flip()
 
-        assertEquals(FateSchema.Registry.REFLECTED_CLASS.value, buffer.int) // tag
+        assertEquals(FateSchema.Registry.CUSTOM.value, buffer.int) // tag
         assertEquals(3, buffer.int) // number of fields
 
         // Verify that fields are present (order may vary)
@@ -120,7 +120,7 @@ class ClassSchemasTest {
         val schema = ReflectedClassSchema.createFromClass(ComplexStruct::class.java)
         val testStruct = ComplexStruct(3.14, TestEnum.SECOND, arrayOf(1, 2, 3))
 
-        assertEquals(FateSchema.Registry.REFLECTED_CLASS.value, schema.tag)
+        assertEquals(FateSchema.Registry.CUSTOM.value, schema.tag)
         assertEquals(3, schema.fields.size)
 
         assertDoesNotThrow {
@@ -169,7 +169,7 @@ class ClassSchemasTest {
 
         val typedSchema = schema as TypedClassSchema<*>
         assertEquals("StructWithType", typedSchema.type)
-        assertEquals(FateSchema.Registry.REFLECTED_CLASS.value, typedSchema.tag)
+        assertEquals(FateSchema.Registry.CUSTOM.value, typedSchema.tag)
 
         // Should have all fields from the class
         assertEquals(4, typedSchema.fields.size)
@@ -217,7 +217,7 @@ class ClassSchemasTest {
         buffer.flip()
 
         // Verify schema encoding
-        assertEquals(FateSchema.Registry.REFLECTED_CLASS.value, buffer.int) // tag
+        assertEquals(FateSchema.Registry.CUSTOM.value, buffer.int) // tag
         assertEquals(4, buffer.int) // number of fields (including type field)
 
         // Verify .type field is encoded first
@@ -385,7 +385,7 @@ class ClassSchemasTest {
             encoder = { person -> listOf(person.name, person.age, person.email) }
         )
 
-        assertEquals(FateSchema.Registry.REFLECTED_CLASS.value, schema.tag)
+        assertEquals(FateSchema.Registry.CUSTOM.value, schema.tag)
         assertEquals("Person", schema.type)
         assertEquals(listOf("name", "age", "email"), schema.componentNames)
         assertEquals(3, schema.componentSchemas.size)
@@ -460,7 +460,7 @@ class ClassSchemasTest {
         buffer.flip()
 
         // Verify schema encoding
-        assertEquals(FateSchema.Registry.REFLECTED_CLASS.value, buffer.int) // tag
+        assertEquals(FateSchema.Registry.CUSTOM.value, buffer.int) // tag
         assertEquals(3, buffer.int) // number of components
 
         // Verify .type field is encoded first in schema

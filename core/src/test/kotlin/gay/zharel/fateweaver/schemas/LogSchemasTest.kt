@@ -208,7 +208,7 @@ class LogSchemasTest {
     @Test
     fun testSchemaRegistry() {
         // Test that registry values are correctly defined
-        assertEquals(0, FateSchema.Registry.REFLECTED_CLASS.value)
+        assertEquals(0, FateSchema.Registry.CUSTOM.value)
         assertEquals(1, FateSchema.Registry.INT.value)
         assertEquals(2, FateSchema.Registry.LONG.value)
         assertEquals(3, FateSchema.Registry.DOUBLE.value)
