@@ -2,6 +2,7 @@ package gay.zharel.fateweaver.log
 
 import gay.zharel.fateweaver.schemas.ArraySchema
 import gay.zharel.fateweaver.schemas.BooleanSchema
+import gay.zharel.fateweaver.schemas.CustomStructSchema
 import gay.zharel.fateweaver.schemas.DoubleSchema
 import gay.zharel.fateweaver.schemas.DynamicEnumSchema
 import gay.zharel.fateweaver.schemas.EnumSchema
@@ -299,6 +300,15 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
             is TypedClassSchema<*> -> {
                 val fieldValues = mutableMapOf<String, Any>()
                 for ((fieldName, fieldSchema) in schema.fields) {
+                    val fieldValue = readObject(fieldSchema)
+                    fieldValues[fieldName] = fieldValue
+                }
+                // Return a map of field values since we can't reconstruct the actual class
+                fieldValues
+            }
+            is CustomStructSchema<*> -> {
+                val fieldValues = mutableMapOf<String, Any>()
+                for ((fieldName, fieldSchema) in schema.components) {
                     val fieldValue = readObject(fieldSchema)
                     fieldValues[fieldName] = fieldValue
                 }
