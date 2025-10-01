@@ -42,7 +42,8 @@ class DynamicEnumSchema(val constantNames: List<String>) : FateSchema<String> {
         Int.SIZE_BYTES + it.toByteArray(Charsets.UTF_8).size
     }
 
-    override fun encodeSchema(buffer: ByteBuffer) {
+    override val schema: ByteArray by lazy {
+        val buffer = ByteBuffer.allocate(schemaSize)
         buffer.putInt(tag)
         buffer.putInt(constantNames.size)
         for (constantName in constantNames) {
@@ -50,6 +51,7 @@ class DynamicEnumSchema(val constantNames: List<String>) : FateSchema<String> {
             buffer.putInt(bytes.size)
             buffer.put(bytes)
         }
+        buffer.array()
     }
 
     override fun objSize(obj: String): Int = Int.SIZE_BYTES
