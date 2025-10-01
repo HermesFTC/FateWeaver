@@ -32,6 +32,7 @@ dependencies {
 - Type-safe channels, including support for custom data types using reflection!
 - Downloading logs to your computer for viewing with AdvantageScope!
 - Backwards-compatibility with existing RoadRunner FlightRecorder API.
+- Support for typed classes with `AS_TYPE` and fully customizable serialization with `CustomStructSchema`!
 
 ## Usage
 
@@ -62,6 +63,113 @@ public class MyOpMode extends OpMode {
         poses.put(drive.localizer.getPose());
     }
 }
+```
+
+## Advanced Schema Features
+
+### Typed Classes with AS_TYPE
+
+FateWeaver automatically detects classes with a companion object containing an `AS_TYPE` property
+(or a static `AS_TYPE` field for Java classes)
+and creates enhanced schemas that include type information in the serialized data.
+This is useful for polymorphic logging and schema evolution.
+
+AdvantageScope will automatically use this information to display the correct type in the UI.
+
+```kotlin
+data class RobotCommand(
+    val type: String,
+    val timestamp: Long,
+    val parameters: Map<String, String>
+) {
+    companion object {
+        val AS_TYPE = "RobotCommand"  // This triggers TypedClassSchema
+    }
+}
+
+// Usage
+val commandChannel = FlightRecorder.createChannel("commands", RobotCommand::class.java)
+commandChannel.put(RobotCommand("MOVE_FORWARD", System.nanoTime(), mapOf("speed" to "0.8")))
+```
+
+### Custom Serialization with CustomStructSchema
+
+For maximum flexibility, you can define exactly how your objects are serialized using `CustomStructSchema`.
+This is particularly useful for:
+- Legacy classes that can't be modified
+- Optimized encoding to reduce log file size
+- Data transformation during serialization
+- Including only specific fields
+
+```kotlin
+// Transform and optimize data during serialization
+data class SensorReading(val timestamp: Long, val value: Double, val sensorId: String, val metadata: Map<String, Any>)
+
+val optimizedSensorSchema = CustomStructSchema<SensorReading>(
+    type = "OptimizedSensor",
+    componentNames = listOf("time", "reading", "sensor"),
+    componentSchemas = listOf(LongSchema, DoubleSchema, StringSchema),
+    encoder = { reading ->
+        listOf(
+            reading.timestamp / 1000000,  // Convert nanoseconds to milliseconds
+            String.format("%.3f", reading.value).toDouble(),  // Round to 3 decimal places
+            reading.sensorId.take(8)  // Truncate sensor ID to save space
+        )
+    }
+)
+
+// Usage with custom schema
+val sensorChannel = writer.createChannel("sensors", optimizedSensorSchema)
+sensorChannel.put(SensorReading(System.nanoTime(), 3.14159265, "GYRO_SENSOR_001", mapOf()))
+```
+
+#### Coordinate System Transformations
+
+```kotlin
+data class RobotPose(val x: Double, val y: Double, val heading: Double)
+
+val fieldCentricSchema = CustomStructSchema<RobotPose>(
+    type = "FieldCentricPose",
+    componentNames = listOf("fieldX", "fieldY", "fieldHeading"),
+    componentSchemas = listOf(DoubleSchema, DoubleSchema, DoubleSchema),
+    encoder = { pose ->
+        // Transform robot-centric coordinates to field-centric
+        val fieldX = pose.x + FIELD_OFFSET_X
+        val fieldY = pose.y + FIELD_OFFSET_Y
+        val fieldHeading = normalizeAngle(pose.heading)
+        listOf(fieldX, fieldY, fieldHeading)
+    }
+)
+```
+
+#### Selective Field Logging
+
+```kotlin
+class ComplexRobotState(
+    val pose: Pose2d,
+    val velocity: PoseVelocity2d,
+    val sensorData: Map<String, Double>,
+    val internalState: PrivateData,  // Don't want to log this
+    val debugInfo: String           // Only log in debug mode
+) {
+    companion object {
+        val AS_TYPE = "RobotState"
+    }
+}
+
+val essentialStateSchema = CustomStructSchema<ComplexRobotState>(
+    type = "EssentialState",
+    componentNames = listOf("x", "y", "heading", "velocityMag"),
+    componentSchemas = listOf(DoubleSchema, DoubleSchema, DoubleSchema, DoubleSchema),
+    encoder = { state ->
+        listOf(
+            state.pose.position.x,
+            state.pose.position.y,
+            state.pose.heading.toDouble(),
+            sqrt(state.velocity.linearVel.x.pow(2) + state.velocity.linearVel.y.pow(2))
+        )
+    }
+)
 ```
 
 ## Downloading Logs
