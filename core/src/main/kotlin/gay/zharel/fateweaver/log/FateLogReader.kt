@@ -144,7 +144,7 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
         val tagBytes = ByteArray(4)
         stream.read(tagBytes)
         return when (val tag = ByteBuffer.wrap(tagBytes).int) {
-            FateSchema.Registry.REFLECTED_CLASS.value -> readStructSchema()
+            FateSchema.Registry.CUSTOM.value -> readStructSchema()
             FateSchema.Registry.INT.value -> IntSchema
             FateSchema.Registry.LONG.value -> LongSchema
             FateSchema.Registry.DOUBLE.value -> DoubleSchema
