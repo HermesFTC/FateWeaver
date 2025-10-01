@@ -49,6 +49,30 @@ class ClassSchemasTest {
 
     enum class TestEnum { FIRST, SECOND, THIRD }
 
+    // Test classes for CustomStructSchema
+    data class Person(val name: String, val age: Int, val email: String)
+
+    data class Point3D(val x: Double, val y: Double, val z: Double)
+
+    class CustomClass(val id: Int, val data: String, val active: Boolean) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+            other as CustomClass
+            if (id != other.id) return false
+            if (data != other.data) return false
+            if (active != other.active) return false
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = id
+            result = 31 * result + data.hashCode()
+            result = 31 * result + active.hashCode()
+            return result
+        }
+    }
+
     @Test
     fun testReflectedClassSchema() {
         val schema = ReflectedClassSchema.createFromClass(SimpleStruct::class.java)
@@ -349,5 +373,343 @@ class ClassSchemasTest {
         val obj3 = SimpleStruct(3, "different", true)
         // Different string length should give different object size
         assertNotEquals(schema.objSize(obj1), schema.objSize(obj3))
+    }
+
+    @Test
+    fun testCustomStructSchemaCreation() {
+        // Create a CustomStructSchema for Person class
+        val schema = CustomStructSchema<Person>(
+            type = "Person",
+            componentNames = listOf("name", "age", "email"),
+            componentSchemas = listOf(StringSchema, IntSchema, StringSchema),
+            encoder = { person -> listOf(person.name, person.age, person.email) }
+        )
+
+        assertEquals(FateSchema.Registry.REFLECTED_CLASS.value, schema.tag)
+        assertEquals("Person", schema.type)
+        assertEquals(listOf("name", "age", "email"), schema.componentNames)
+        assertEquals(3, schema.componentSchemas.size)
+
+        // Verify component schemas
+        assertTrue(schema.componentSchemas[0] is StringSchema)
+        assertTrue(schema.componentSchemas[1] is IntSchema)
+        assertTrue(schema.componentSchemas[2] is StringSchema)
+    }
+
+    @Test
+    fun testCustomStructSchemaSize() {
+        val schema = CustomStructSchema<Person>(
+            type = "Person",
+            componentNames = listOf("name", "age", "email"),
+            componentSchemas = listOf(StringSchema, IntSchema, StringSchema),
+            encoder = { person -> listOf(person.name, person.age, person.email) }
+        )
+
+        val testPerson = Person("John Doe", 30, "john@example.com")
+
+        // Calculate expected object size
+        val expectedTypeSize = 4 + "Person".toByteArray(Charsets.UTF_8).size // type field
+        val expectedNameSize = 4 + "John Doe".toByteArray(Charsets.UTF_8).size // name
+        val expectedAgeSize = 4 // age (int)
+        val expectedEmailSize = 4 + "john@example.com".toByteArray(Charsets.UTF_8).size // email
+        val expectedTotalSize = expectedTypeSize + expectedNameSize + expectedAgeSize + expectedEmailSize
+
+        assertEquals(expectedTotalSize, schema.objSize(testPerson))
+    }
+
+    @Test
+    fun testCustomStructSchemaSchemaSize() {
+        val schema = CustomStructSchema<Person>(
+            type = "Person",
+            componentNames = listOf("name", "age", "email"),
+            componentSchemas = listOf(StringSchema, IntSchema, StringSchema),
+            encoder = { person -> listOf(person.name, person.age, person.email) }
+        )
+
+        // Schema size should include:
+        // - tag (4 bytes)
+        // - field count (4 bytes)
+        // - .type field name length + name + schema (4 + 5 + 4 = 13 bytes)
+        // - each component name length + name + schema
+        val expectedSchemaSize = 4 + 4 + // tag + field count
+                4 + ".type".toByteArray().size + StringSchema.schemaSize + // .type field
+                (4 + "name".toByteArray().size + StringSchema.schemaSize) + // name field
+                (4 + "age".toByteArray().size + IntSchema.schemaSize) + // age field
+                (4 + "email".toByteArray().size + StringSchema.schemaSize) // email field
+
+        assertEquals(expectedSchemaSize, schema.schemaSize)
+    }
+
+    @Test
+    fun testCustomStructSchemaEncoding() {
+        val schema = CustomStructSchema<Person>(
+            type = "Person",
+            componentNames = listOf("name", "age", "email"),
+            componentSchemas = listOf(StringSchema, IntSchema, StringSchema),
+            encoder = { person -> listOf(person.name, person.age, person.email) }
+        )
+
+        val testPerson = Person("Alice", 25, "alice@test.com")
+
+        val objSize = schema.objSize(testPerson)
+        val buffer = ByteBuffer.allocate(schema.schemaSize + objSize)
+
+        // Encode schema and object
+        schema.encodeSchema(buffer)
+        schema.encodeObject(buffer, testPerson)
+        buffer.flip()
+
+        // Verify schema encoding
+        assertEquals(FateSchema.Registry.REFLECTED_CLASS.value, buffer.int) // tag
+        assertEquals(3, buffer.int) // number of components
+
+        // Verify .type field is encoded first in schema
+        val typeFieldNameLength = buffer.int
+        val typeFieldNameBytes = ByteArray(typeFieldNameLength)
+        buffer.get(typeFieldNameBytes)
+        assertEquals(".type", String(typeFieldNameBytes, Charsets.UTF_8))
+
+        // Skip the string schema tag for .type field
+        assertEquals(FateSchema.Registry.STRING.value, buffer.int)
+
+        // Skip remaining schema fields for brevity
+        // The important part is that we can encode without errors
+        assertTrue(buffer.position() > 0, "Schema should have been encoded")
+    }
+
+    @Test
+    fun testCustomStructSchemaObjectEncoding() {
+        val schema = CustomStructSchema<Person>(
+            type = "Person",
+            componentNames = listOf("name", "age", "email"),
+            componentSchemas = listOf(StringSchema, IntSchema, StringSchema),
+            encoder = { person -> listOf(person.name, person.age, person.email) }
+        )
+
+        val testPerson = Person("Bob", 35, "bob@company.org")
+
+        val objSize = schema.objSize(testPerson)
+        val buffer = ByteBuffer.allocate(objSize)
+
+        // Encode just the object
+        schema.encodeObject(buffer, testPerson)
+        buffer.flip()
+
+        // Verify type field is encoded first
+        val typeLength = buffer.int
+        val typeBytes = ByteArray(typeLength)
+        buffer.get(typeBytes)
+        assertEquals("Person", String(typeBytes, Charsets.UTF_8))
+
+        // Verify name field
+        val nameLength = buffer.int
+        val nameBytes = ByteArray(nameLength)
+        buffer.get(nameBytes)
+        assertEquals("Bob", String(nameBytes, Charsets.UTF_8))
+
+        // Verify age field
+        assertEquals(35, buffer.int)
+
+        // Verify email field
+        val emailLength = buffer.int
+        val emailBytes = ByteArray(emailLength)
+        buffer.get(emailBytes)
+        assertEquals("bob@company.org", String(emailBytes, Charsets.UTF_8))
+
+        assertEquals(0, buffer.remaining(), "All data should have been read")
+    }
+
+    @Test
+    fun testCustomStructSchemaWithDifferentTypes() {
+        // Test with Point3D using all double values
+        val pointSchema = CustomStructSchema<Point3D>(
+            type = "Point3D",
+            componentNames = listOf("x", "y", "z"),
+            componentSchemas = listOf(DoubleSchema, DoubleSchema, DoubleSchema),
+            encoder = { point -> listOf(point.x, point.y, point.z) }
+        )
+
+        val testPoint = Point3D(1.5, 2.7, -3.14)
+
+        // Test size calculation
+        val expectedSize = 4 + "Point3D".toByteArray().size + 8 + 8 + 8 // type + 3 doubles
+        assertEquals(expectedSize, pointSchema.objSize(testPoint))
+
+        // Test encoding
+        val buffer = ByteBuffer.allocate(pointSchema.objSize(testPoint))
+        pointSchema.encodeObject(buffer, testPoint)
+        buffer.flip()
+
+        // Verify encoding
+        val typeLength = buffer.int
+        val typeBytes = ByteArray(typeLength)
+        buffer.get(typeBytes)
+        assertEquals("Point3D", String(typeBytes, Charsets.UTF_8))
+
+        assertEquals(1.5, buffer.double, 1e-10)
+        assertEquals(2.7, buffer.double, 1e-10)
+        assertEquals(-3.14, buffer.double, 1e-10)
+
+        assertEquals(0, buffer.remaining())
+    }
+
+    @Test
+    fun testCustomStructSchemaWithMixedTypes() {
+        // Test with CustomClass using mixed types
+        val customSchema = CustomStructSchema<CustomClass>(
+            type = "CustomClass",
+            componentNames = listOf("id", "data", "active"),
+            componentSchemas = listOf(IntSchema, StringSchema, BooleanSchema),
+            encoder = { obj -> listOf(obj.id, obj.data, obj.active) }
+        )
+
+        val testObject = CustomClass(42, "test data", true)
+
+        // Test object size calculation
+        val expectedSize = 4 + "CustomClass".toByteArray().size + // type
+                4 + // id (int)
+                4 + "test data".toByteArray().size + // data (string)
+                1 // active (boolean)
+        assertEquals(expectedSize, customSchema.objSize(testObject))
+
+        // Test encoding
+        val buffer = ByteBuffer.allocate(customSchema.objSize(testObject))
+        customSchema.encodeObject(buffer, testObject)
+        buffer.flip()
+
+        // Verify type
+        val typeLength = buffer.int
+        val typeBytes = ByteArray(typeLength)
+        buffer.get(typeBytes)
+        assertEquals("CustomClass", String(typeBytes, Charsets.UTF_8))
+
+        // Verify id
+        assertEquals(42, buffer.int)
+
+        // Verify data
+        val dataLength = buffer.int
+        val dataBytes = ByteArray(dataLength)
+        buffer.get(dataBytes)
+        assertEquals("test data", String(dataBytes, Charsets.UTF_8))
+
+        // Verify active
+        assertEquals(1.toByte(), buffer.get()) // true
+
+        assertEquals(0, buffer.remaining())
+    }
+
+    @Test
+    fun testCustomStructSchemaConsistency() {
+        val schema = CustomStructSchema<Person>(
+            type = "Person",
+            componentNames = listOf("name", "age", "email"),
+            componentSchemas = listOf(StringSchema, IntSchema, StringSchema),
+            encoder = { person -> listOf(person.name, person.age, person.email) }
+        )
+
+        val person1 = Person("Same", 30, "test")
+        val person2 = Person("Same", 40, "test") // different age, same string lengths
+        val person3 = Person("Different", 30, "longer_email@domain.com") // different string lengths
+
+        // Same string lengths should give same object size
+        assertEquals(schema.objSize(person1), schema.objSize(person2))
+
+        // Different string lengths should give different object size
+        assertNotEquals(schema.objSize(person1), schema.objSize(person3))
+    }
+
+    @Test
+    fun testCustomStructSchemaRoundTrip() {
+        val schema = CustomStructSchema<Person>(
+            type = "Person",
+            componentNames = listOf("name", "age", "email"),
+            componentSchemas = listOf(StringSchema, IntSchema, StringSchema),
+            encoder = { person -> listOf(person.name, person.age, person.email) }
+        )
+
+        val testPerson = Person("Charlie", 28, "charlie@example.com")
+
+        // Test that objSize calculation matches actual encoding
+        val objSize = schema.objSize(testPerson)
+        val buffer = ByteBuffer.allocate(objSize)
+        schema.encodeObject(buffer, testPerson)
+
+        assertEquals(0, buffer.remaining(), "Object size should match encoded size exactly")
+    }
+
+    @Test
+    fun testCustomStructSchemaWithCustomEncoder() {
+        // Test a custom encoder that transforms the data
+        val transformedSchema = CustomStructSchema<Person>(
+            type = "TransformedPerson",
+            componentNames = listOf("fullName", "yearsOld", "contact"),
+            componentSchemas = listOf(StringSchema, IntSchema, StringSchema),
+            encoder = { person ->
+                listOf(
+                    person.name.uppercase(), // Transform name to uppercase
+                    person.age + 1, // Add 1 to age
+                    "EMAIL:${person.email}" // Prefix email
+                )
+            }
+        )
+
+        val testPerson = Person("john doe", 29, "john@test.com")
+
+        val objSize = transformedSchema.objSize(testPerson)
+        val buffer = ByteBuffer.allocate(objSize)
+        transformedSchema.encodeObject(buffer, testPerson)
+        buffer.flip()
+
+        // Verify type
+        val typeLength = buffer.int
+        val typeBytes = ByteArray(typeLength)
+        buffer.get(typeBytes)
+        assertEquals("TransformedPerson", String(typeBytes, Charsets.UTF_8))
+
+        // Verify transformed name
+        val nameLength = buffer.int
+        val nameBytes = ByteArray(nameLength)
+        buffer.get(nameBytes)
+        assertEquals("JOHN DOE", String(nameBytes, Charsets.UTF_8))
+
+        // Verify transformed age
+        assertEquals(30, buffer.int) // 29 + 1
+
+        // Verify transformed email
+        val emailLength = buffer.int
+        val emailBytes = ByteArray(emailLength)
+        buffer.get(emailBytes)
+        assertEquals("EMAIL:john@test.com", String(emailBytes, Charsets.UTF_8))
+
+        assertEquals(0, buffer.remaining())
+    }
+
+    @Test
+    fun testCustomStructSchemaEmptyComponents() {
+        // Test with no components (edge case)
+        val emptySchema = CustomStructSchema<Person>(
+            type = "Empty",
+            componentNames = emptyList(),
+            componentSchemas = emptyList(),
+            encoder = { _ -> emptyList() }
+        )
+
+        val testPerson = Person("test", 25, "test@test.com")
+
+        // Should only include the type field
+        val expectedSize = 4 + "Empty".toByteArray().size
+        assertEquals(expectedSize, emptySchema.objSize(testPerson))
+
+        val buffer = ByteBuffer.allocate(emptySchema.objSize(testPerson))
+        emptySchema.encodeObject(buffer, testPerson)
+        buffer.flip()
+
+        // Should only encode the type
+        val typeLength = buffer.int
+        val typeBytes = ByteArray(typeLength)
+        buffer.get(typeBytes)
+        assertEquals("Empty", String(typeBytes, Charsets.UTF_8))
+
+        assertEquals(0, buffer.remaining())
     }
 }
