@@ -240,7 +240,7 @@ class CustomStructSchema<T : Any>(
      * will be serialized. The number and order of schemas must exactly match the
      * components returned by the encoder function.
      */
-    val componentSchemas: List<FateSchema<Any>>,
+    val componentSchemas: List<FateSchema<*>>,
 
     /**
      * Function that decomposes objects into serializable components.
