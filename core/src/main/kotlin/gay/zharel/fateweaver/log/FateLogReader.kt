@@ -11,6 +11,7 @@ import gay.zharel.fateweaver.schemas.IntSchema
 import gay.zharel.fateweaver.schemas.LongSchema
 import gay.zharel.fateweaver.schemas.ReflectedClassSchema
 import gay.zharel.fateweaver.schemas.StringSchema
+import gay.zharel.fateweaver.schemas.TranslatedSchema
 import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
@@ -304,6 +305,9 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
                 }
                 // Return a map of field values since we can't reconstruct the actual class
                 components
+            }
+            is TranslatedSchema<*, *> -> {
+                readObject(schema.baseSchema)
             }
         }
     }

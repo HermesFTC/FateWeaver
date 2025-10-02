@@ -311,3 +311,33 @@ class CustomStructSchema<T : Any>(
         private val TYPE_FIELD = ".type" to StringSchema
     }
 }
+
+/**
+ * A schema for converting objects of type [T] to another type [U] during serialization.
+ *
+ * @param baseSchema The schema for the base type [T]
+ * @param toBase A function that converts objects of type [T] to objects of type [U]
+ */
+class TranslatedSchema<T : Any, U : Any>(
+    val baseSchema: FateSchema<U>,
+    val toBase: (T) -> U,
+) : FateSchema<T> {
+    /**
+     * Creates a new TranslatedSchema with the specified configuration.
+     *
+     * @param baseClass The class of the base type [T]
+     * @param toBase A function that converts objects of type [T] to objects of type [U]
+     */
+    constructor(baseClass: Class<U>, toBase: (T) -> U) :
+            this(FateSchema.schemaOfClass(baseClass.kotlin), toBase)
+
+    override val tag: Int = baseSchema.tag
+    override val schemaSize: Int = baseSchema.schemaSize
+    override val schema: ByteArray by lazy { baseSchema.schema }
+
+    override fun objSize(obj: T): Int = baseSchema.objSize(toBase(obj))
+
+    override fun encodeObject(buffer: ByteBuffer, obj: T) {
+        baseSchema.encodeObject(buffer, toBase(obj))
+    }
+}
