@@ -2,6 +2,7 @@ package gay.zharel.fateweaver.schemas
 
 import java.nio.ByteBuffer
 import kotlin.jvm.kotlin
+import kotlin.reflect.KClass
 
 /**
  * Core interface for defining serialization schemas in the FateWeaver logging system.
@@ -285,6 +286,7 @@ sealed interface FateSchema<T> {
          * @see TypedClassSchema
          */
         @Suppress("UNCHECKED_CAST")
+        @JvmStatic
         fun <T : Any> schemaOfClass(clazz: Class<T>): FateSchema<T> = when (clazz) {
             Int::class.java, Integer::class.java -> IntSchema
             Long::class.java, java.lang.Long::class.java -> LongSchema
@@ -302,5 +304,72 @@ sealed interface FateSchema<T> {
                 }
             }
         } as FateSchema<T>
+
+        /**
+         * Automatically creates an appropriate schema for the given class type.
+         *
+         * This factory method uses reflection and type inspection to determine the most
+         * suitable schema for a given Java class. It handles the complete type system
+         * including primitives, collections, enums, and custom classes.
+         *
+         * ## Supported Types
+         *
+         * **Primitive Types**:
+         * - `int/Integer` → [IntSchema]
+         * - `long/Long` → [LongSchema]
+         * - `double/Double` → [DoubleSchema]
+         * - `boolean/Boolean` → [BooleanSchema]
+         * - `String` → [StringSchema]
+         *
+         * **Collection Types**:
+         * - `T[]` → [ArraySchema]<T> (recursive schema inference for element type)
+         * - `Enum<T>` → [EnumSchema]<T>
+         *
+         * **Class Types**:
+         * - Classes with companion object `as_type` property → [TypedClassSchema]
+         * - All other classes → [ReflectedClassSchema]
+         *
+         * ## Type Safety
+         *
+         * The method uses unchecked casts internally but maintains type safety through
+         * careful type checking. The returned schema is guaranteed to be compatible
+         * with the input class type.
+         *
+         * ## Performance Considerations
+         *
+         * - Primitive type mapping is constant-time
+         * - Enum and array detection uses class introspection
+         * - Class schema creation involves reflection and field analysis
+         * - Consider caching schemas for frequently used types
+         *
+         * ## Usage Examples
+         *
+         * ```kotlin
+         * // Primitive types
+         * val intSchema = FateSchema.schemaOfClass(Int::class.java)        // IntSchema
+         * val stringSchema = FateSchema.schemaOfClass(String::class.java)  // StringSchema
+         *
+         * // Collections
+         * val arraySchema = FateSchema.schemaOfClass(Array<String>::class.java)  // ArraySchema<String>
+         * val enumSchema = FateSchema.schemaOfClass(MyEnum::class.java)           // EnumSchema<MyEnum>
+         *
+         * // Custom classes
+         * val userSchema = FateSchema.schemaOfClass(User::class.java)      // ReflectedClassSchema<User>
+         * val typedSchema = FateSchema.schemaOfClass(TypedClass::class.java) // TypedClassSchema<TypedClass>
+         * ```
+         *
+         * @param T The type parameter matching the class
+         * @param clazz The Java class to create a schema for
+         * @return A schema instance capable of serializing objects of type T
+         * @throws IllegalArgumentException if the class type is not supported
+         * @see IntSchema
+         * @see StringSchema
+         * @see ArraySchema
+         * @see EnumSchema
+         * @see ReflectedClassSchema
+         * @see TypedClassSchema
+         */
+        @JvmStatic
+        fun <T : Any> schemaOfClass(cls: KClass<T>): FateSchema<T> = schemaOfClass(cls.javaObjectType)
     }
 }
