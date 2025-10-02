@@ -77,10 +77,10 @@ sealed interface FateSchema<T> {
      * Unique identifier for this schema type within the FateWeaver format.
      *
      * Each schema implementation has a distinct tag value that identifies its type
-     * in the binary format. Tags are defined in the [Registry] enum and must be
+     * in the binary format. Tags are defined in the [TypeRegistry] enum and must be
      * consistent across all versions of the format.
      *
-     * @see Registry
+     * @see TypeRegistry
      */
     val tag: Int
 
@@ -194,7 +194,7 @@ sealed interface FateSchema<T> {
      *
      * @param value The unique integer tag for this schema type
      */
-    enum class Registry(val value: Int) {
+    enum class TypeRegistry(val value: Int) {
         /** Class-based schemas using reflection or custom encoding */
         CUSTOM(0),
 
@@ -221,6 +221,16 @@ sealed interface FateSchema<T> {
     }
 
     companion object Companion {
+        private val registry = mutableMapOf<KClass<*>, FateSchema<*>>()
+
+        /**
+         * Returns a map of all registered schemas.
+         */
+        @JvmStatic
+        @get:JvmName("getRegisteredSchemas")
+        val SCHEMA_REGISTRY: Map<KClass<*>, FateSchema<*>>
+            get() = registry.toMap()
+
         /**
          * Automatically creates an appropriate schema for the given class type.
          *
@@ -287,23 +297,31 @@ sealed interface FateSchema<T> {
          */
         @Suppress("UNCHECKED_CAST")
         @JvmStatic
-        fun <T : Any> schemaOfClass(clazz: Class<T>): FateSchema<T> = when (clazz) {
-            Int::class.java, Integer::class.java -> IntSchema
-            Long::class.java, java.lang.Long::class.java -> LongSchema
-            Double::class.java, java.lang.Double::class.java -> DoubleSchema
-            String::class.java -> StringSchema
-            Boolean::class.java, java.lang.Boolean::class.java -> BooleanSchema
-            else -> {
-                if (clazz.isEnum) {
-                    @Suppress("UNCHECKED_CAST")
-                    EnumSchema(clazz as Class<out Enum<*>>)
-                } else if (clazz.isArray) {
-                    ArraySchema(schemaOfClass(clazz.componentType!!))
-                } else {
-                    ReflectedClassSchema.createFromClass(clazz.kotlin)
-                }
+        fun <T : Any> schemaOfClass(clazz: Class<T>): FateSchema<T> {
+            val cls = clazz.kotlin
+            if (registry.containsKey(cls)) {
+                return registry[cls] as FateSchema<T>
+            } else {
+                val schema = when (clazz) {
+                    Int::class.java, Integer::class.java -> IntSchema
+                    Long::class.java, java.lang.Long::class.java -> LongSchema
+                    Double::class.java, java.lang.Double::class.java -> DoubleSchema
+                    String::class.java -> StringSchema
+                    Boolean::class.java, java.lang.Boolean::class.java -> BooleanSchema
+                    else -> {
+                        if (clazz.isEnum) {
+                            EnumSchema(clazz as Class<out Enum<*>>)
+                        } else if (clazz.isArray) {
+                            ArraySchema(schemaOfClass(clazz.componentType!!))
+                        } else {
+                            ReflectedClassSchema.createFromClass(cls)
+                        }
+                    }
+                } as FateSchema<T>
+                registry[cls] = schema
+                return schema
             }
-        } as FateSchema<T>
+        }
 
         /**
          * Automatically creates an appropriate schema for the given class type.
@@ -359,7 +377,7 @@ sealed interface FateSchema<T> {
          * ```
          *
          * @param T The type parameter matching the class
-         * @param clazz The Java class to create a schema for
+         * @param cls The class to create a schema for
          * @return A schema instance capable of serializing objects of type T
          * @throws IllegalArgumentException if the class type is not supported
          * @see IntSchema
@@ -371,5 +389,21 @@ sealed interface FateSchema<T> {
          */
         @JvmStatic
         fun <T : Any> schemaOfClass(cls: KClass<T>): FateSchema<T> = schemaOfClass(cls.javaObjectType)
+
+        /**
+         * Registers a custom schema for the given class type.
+         */
+        @JvmStatic
+        fun <T : Any> registerSchema(cls: Class<T>, schema: FateSchema<T>) {
+            registerSchema(cls.kotlin, schema)
+        }
+
+        /**
+         * Registers a custom schema for the given class type.
+         */
+        @JvmStatic
+        fun <T : Any> registerSchema(cls: KClass<T>, schema: FateSchema<T>) {
+            registry[cls] = schema
+        }
     }
 }

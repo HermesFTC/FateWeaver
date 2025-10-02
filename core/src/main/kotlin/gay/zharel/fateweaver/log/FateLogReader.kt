@@ -145,14 +145,14 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
         val tagBytes = ByteArray(4)
         stream.read(tagBytes)
         return when (val tag = ByteBuffer.wrap(tagBytes).int) {
-            FateSchema.Registry.CUSTOM.value -> readStructSchema()
-            FateSchema.Registry.INT.value -> IntSchema
-            FateSchema.Registry.LONG.value -> LongSchema
-            FateSchema.Registry.DOUBLE.value -> DoubleSchema
-            FateSchema.Registry.STRING.value -> StringSchema
-            FateSchema.Registry.BOOLEAN.value -> BooleanSchema
-            FateSchema.Registry.ENUM.value -> readEnumSchema()
-            FateSchema.Registry.ARRAY.value -> readArraySchema()
+            FateSchema.TypeRegistry.CUSTOM.value -> readStructSchema()
+            FateSchema.TypeRegistry.INT.value -> IntSchema
+            FateSchema.TypeRegistry.LONG.value -> LongSchema
+            FateSchema.TypeRegistry.DOUBLE.value -> DoubleSchema
+            FateSchema.TypeRegistry.STRING.value -> StringSchema
+            FateSchema.TypeRegistry.BOOLEAN.value -> BooleanSchema
+            FateSchema.TypeRegistry.ENUM.value -> readEnumSchema()
+            FateSchema.TypeRegistry.ARRAY.value -> readArraySchema()
             else -> throw IllegalArgumentException("Unknown schema tag: $tag")
         }
     }

@@ -208,14 +208,14 @@ class LogSchemasTest {
     @Test
     fun testSchemaRegistry() {
         // Test that registry values are correctly defined
-        assertEquals(0, FateSchema.Registry.CUSTOM.value)
-        assertEquals(1, FateSchema.Registry.INT.value)
-        assertEquals(2, FateSchema.Registry.LONG.value)
-        assertEquals(3, FateSchema.Registry.DOUBLE.value)
-        assertEquals(4, FateSchema.Registry.STRING.value)
-        assertEquals(5, FateSchema.Registry.BOOLEAN.value)
-        assertEquals(6, FateSchema.Registry.ENUM.value)
-        assertEquals(7, FateSchema.Registry.ARRAY.value)
+        assertEquals(0, FateSchema.TypeRegistry.CUSTOM.value)
+        assertEquals(1, FateSchema.TypeRegistry.INT.value)
+        assertEquals(2, FateSchema.TypeRegistry.LONG.value)
+        assertEquals(3, FateSchema.TypeRegistry.DOUBLE.value)
+        assertEquals(4, FateSchema.TypeRegistry.STRING.value)
+        assertEquals(5, FateSchema.TypeRegistry.BOOLEAN.value)
+        assertEquals(6, FateSchema.TypeRegistry.ENUM.value)
+        assertEquals(7, FateSchema.TypeRegistry.ARRAY.value)
     }
 
     @Test

@@ -12,7 +12,7 @@ class EnumSchemaTest {
     @Test
     fun testEnumSchema() {
         val schema = EnumSchema(TestEnum::class.java)
-        assertEquals(FateSchema.Registry.ENUM.value, schema.tag)
+        assertEquals(FateSchema.TypeRegistry.ENUM.value, schema.tag)
         assertEquals(4, schema.objSize(TestEnum.FIRST))
         assertEquals(4, schema.objSize(TestEnum.SECOND))
 
@@ -26,7 +26,7 @@ class EnumSchemaTest {
         schema.encodeObject(buffer, TestEnum.SECOND)
         buffer.flip()
 
-        assertEquals(FateSchema.Registry.ENUM.value, buffer.int) // tag
+        assertEquals(FateSchema.TypeRegistry.ENUM.value, buffer.int) // tag
         assertEquals(3, buffer.int) // number of enum constants
 
         // Skip reading the enum constant names for brevity

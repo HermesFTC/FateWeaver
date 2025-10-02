@@ -3,7 +3,7 @@ package gay.zharel.fateweaver.schemas
 import java.nio.ByteBuffer
 
 class ArraySchema<T>(val elementSchema: FateSchema<T>) : FateSchema<Array<T>> {
-    override val tag: Int = FateSchema.Registry.ARRAY.value
+    override val tag: Int = FateSchema.TypeRegistry.ARRAY.value
 
     override val schemaSize: Int = Int.SIZE_BYTES + elementSchema.schemaSize
 

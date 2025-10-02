@@ -3,7 +3,7 @@ package gay.zharel.fateweaver.schemas
 import java.nio.ByteBuffer
 
 object IntSchema : FateSchema<Int> {
-    override val tag: Int = FateSchema.Registry.INT.value
+    override val tag: Int = FateSchema.TypeRegistry.INT.value
     override val schemaSize: Int = Int.SIZE_BYTES
 
     override fun objSize(obj: Int): Int = Int.SIZE_BYTES
@@ -13,7 +13,7 @@ object IntSchema : FateSchema<Int> {
 }
 
 object LongSchema : FateSchema<Long> {
-    override val tag: Int = FateSchema.Registry.LONG.value
+    override val tag: Int = FateSchema.TypeRegistry.LONG.value
     override val schemaSize: Int = Int.SIZE_BYTES
 
     override fun objSize(obj: Long): Int = Long.SIZE_BYTES
@@ -23,7 +23,7 @@ object LongSchema : FateSchema<Long> {
 }
 
 object DoubleSchema : FateSchema<Double> {
-    override val tag: Int = FateSchema.Registry.DOUBLE.value
+    override val tag: Int = FateSchema.TypeRegistry.DOUBLE.value
     override val schemaSize: Int = Int.SIZE_BYTES
 
     override fun objSize(obj: Double): Int = Double.SIZE_BYTES
@@ -33,7 +33,7 @@ object DoubleSchema : FateSchema<Double> {
 }
 
 object StringSchema : FateSchema<String> {
-    override val tag: Int = FateSchema.Registry.STRING.value
+    override val tag: Int = FateSchema.TypeRegistry.STRING.value
     override val schemaSize: Int = Int.SIZE_BYTES
 
     override fun objSize(obj: String): Int = Int.SIZE_BYTES + obj.toByteArray(Charsets.UTF_8).size
@@ -46,7 +46,7 @@ object StringSchema : FateSchema<String> {
 }
 
 object BooleanSchema : FateSchema<Boolean> {
-    override val tag: Int = FateSchema.Registry.BOOLEAN.value
+    override val tag: Int = FateSchema.TypeRegistry.BOOLEAN.value
     override val schemaSize: Int = Int.SIZE_BYTES
 
     override fun objSize(obj: Boolean): Int = Byte.SIZE_BYTES

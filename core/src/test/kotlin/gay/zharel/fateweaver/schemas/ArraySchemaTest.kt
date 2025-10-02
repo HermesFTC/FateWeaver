@@ -12,7 +12,7 @@ class ArraySchemaTest {
         val schema = ArraySchema(elementSchema)
         val testArray = arrayOf(1, 2, 3, 4, 5)
 
-        assertEquals(FateSchema.Registry.ARRAY.value, schema.tag)
+        assertEquals(FateSchema.TypeRegistry.ARRAY.value, schema.tag)
         assertEquals(4 + elementSchema.schemaSize, schema.schemaSize)
         assertEquals(4 + testArray.size * 4, schema.objSize(testArray))
 
@@ -21,8 +21,8 @@ class ArraySchemaTest {
         schema.encodeObject(buffer, testArray)
         buffer.flip()
 
-        assertEquals(FateSchema.Registry.ARRAY.value, buffer.int) // tag
-        assertEquals(FateSchema.Registry.INT.value, buffer.int) // element schema tag (IntSchema)
+        assertEquals(FateSchema.TypeRegistry.ARRAY.value, buffer.int) // tag
+        assertEquals(FateSchema.TypeRegistry.INT.value, buffer.int) // element schema tag (IntSchema)
         assertEquals(5, buffer.int) // array length
         for (i in testArray.indices) {
             assertEquals(testArray[i], buffer.int)

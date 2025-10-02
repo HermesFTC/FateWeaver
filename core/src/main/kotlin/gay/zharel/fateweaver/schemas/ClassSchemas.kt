@@ -15,7 +15,7 @@ import kotlin.reflect.jvm.isAccessible
 open class ReflectedClassSchema<T : Any>(
     val fields: Map<String, FateSchema<*>>,
 ) : FateSchema<T> {
-    override val tag: Int = FateSchema.Registry.CUSTOM.value
+    override val tag: Int = FateSchema.TypeRegistry.CUSTOM.value
 
     override val schemaSize: Int = Int.SIZE_BYTES + Int.SIZE_BYTES + fields.map { (name, schema) ->
         Int.SIZE_BYTES + name.toByteArray(Charsets.UTF_8).size + schema.schemaSize
@@ -80,7 +80,7 @@ class TypedClassSchema<T : Any>(
     val type: String,
     fields: Map<String, FateSchema<*>>,
 ) : ReflectedClassSchema<T>(fields) {
-    override val tag: Int = FateSchema.Registry.CUSTOM.value
+    override val tag: Int = FateSchema.TypeRegistry.CUSTOM.value
 
     override val schemaSize: Int = Int.SIZE_BYTES + Int.SIZE_BYTES +
             Int.SIZE_BYTES + TYPE_FIELD.first.toByteArray().size + TYPE_FIELD.second.schemaSize +
@@ -265,7 +265,7 @@ class CustomStructSchema<T : Any>(
         }
     }
 
-    override val tag = FateSchema.Registry.CUSTOM.value
+    override val tag = FateSchema.TypeRegistry.CUSTOM.value
 
     override val schemaSize: Int = Int.SIZE_BYTES + Int.SIZE_BYTES +
             Int.SIZE_BYTES + TYPE_FIELD.first.toByteArray().size + TYPE_FIELD.second.schemaSize +

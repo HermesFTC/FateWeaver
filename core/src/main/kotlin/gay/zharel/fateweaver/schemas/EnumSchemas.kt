@@ -7,7 +7,7 @@ class EnumSchema<T : Enum<T>>(val enumClass: Class<out Enum<T>>) : FateSchema<En
         require(enumClass.isEnum) { "Class must be an enum" }
     }
 
-    override val tag: Int = FateSchema.Registry.ENUM.value
+    override val tag: Int = FateSchema.TypeRegistry.ENUM.value
 
     override val schemaSize: Int = Int.SIZE_BYTES + Int.SIZE_BYTES + enumClass.enumConstants.sumOf { constant ->
         Int.SIZE_BYTES + constant.name.toByteArray(Charsets.UTF_8).size
@@ -37,7 +37,7 @@ class EnumSchema<T : Enum<T>>(val enumClass: Class<out Enum<T>>) : FateSchema<En
  * A schema for enums that preserves the constant names for decoding.
  */
 class DynamicEnumSchema(val constantNames: List<String>) : FateSchema<String> {
-    override val tag: Int = FateSchema.Registry.ENUM.value
+    override val tag: Int = FateSchema.TypeRegistry.ENUM.value
     override val schemaSize: Int = Int.SIZE_BYTES + Int.SIZE_BYTES + constantNames.sumOf {
         Int.SIZE_BYTES + it.toByteArray(Charsets.UTF_8).size
     }
