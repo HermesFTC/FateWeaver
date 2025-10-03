@@ -1,0 +1,35 @@
+site_name: FateWeaver Docs
+site_url: https://fate.zharel.gay/
+
+repo_url: https://github.com/hermesftc/fateweaver
+repo_name: Hermes Library on GitHub
+
+theme:
+  name: material
+  palette:
+    scheme: slate
+    primary: cyan
+    accent: cyan
+  features:
+    - content.tabs.link
+  icon:
+    repo: fontawesome/brands/github
+  logo: assets/logo.png
+  favicon: assets/favicon.png
+
+markdown_extensions:
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - admonition
+  - pymdownx.details
+
+plugins:
+  - search
+  - social
