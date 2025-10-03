@@ -45,3 +45,5 @@ bin/
 .DS_Store
 /.idea/
 /core/src/main/resources/META-INF/lib/
+
+docs/.cache/*
