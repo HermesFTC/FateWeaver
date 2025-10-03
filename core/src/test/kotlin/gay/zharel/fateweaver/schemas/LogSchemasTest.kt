@@ -3,6 +3,7 @@ package gay.zharel.fateweaver.schemas
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import java.nio.ByteBuffer
+import kotlin.test.assertContains
 
 class LogSchemasTest {
 
@@ -207,15 +208,23 @@ class LogSchemasTest {
 
     @Test
     fun testSchemaRegistry() {
-        // Test that registry values are correctly defined
-        assertEquals(0, FateSchema.TypeRegistry.CUSTOM.value)
-        assertEquals(1, FateSchema.TypeRegistry.INT.value)
-        assertEquals(2, FateSchema.TypeRegistry.LONG.value)
-        assertEquals(3, FateSchema.TypeRegistry.DOUBLE.value)
-        assertEquals(4, FateSchema.TypeRegistry.STRING.value)
-        assertEquals(5, FateSchema.TypeRegistry.BOOLEAN.value)
-        assertEquals(6, FateSchema.TypeRegistry.ENUM.value)
-        assertEquals(7, FateSchema.TypeRegistry.ARRAY.value)
+        val structSchema1 = FateSchema.schemaOfClass(SimpleStruct::class.java)
+        val structSchema2 = FateSchema.schemaOfClass<SimpleStruct>()
+
+        assertSame(structSchema1, structSchema2)
+
+        val customSchema1 = CustomStructSchema<ComplexStruct>(
+            "CustomStruct",
+            listOf("double", "array"),
+            listOf(DoubleSchema, ArraySchema(IntSchema))
+        ) { s -> listOf(s.doubleField, s.arrayField) }
+
+        FateSchema.registerSchema(customSchema1)
+        assertContains(FateSchema.SCHEMA_REGISTRY.keys, ComplexStruct::class)
+
+        val customSchema2 = FateSchema.schemaOfClass<ComplexStruct>()
+
+        assertSame(customSchema1, customSchema2)
     }
 
     @Test
