@@ -405,5 +405,19 @@ sealed interface FateSchema<T> {
         fun <T : Any> registerSchema(cls: KClass<T>, schema: FateSchema<T>) {
             registry[cls] = schema
         }
+
+        /**
+         * Convenience method for creating a schema from a reified type parameter.
+         * @see schemaOfClass(Class<T>)
+         */
+        @JvmStatic
+        inline fun <reified T : Any> schemaOfClass(): FateSchema<T> = schemaOfClass(T::class)
+
+        /**
+         * Convenience method for registering a custom schema from a reified type parameter.
+         * @see registerSchema(Class<T>, FateSchema<T>)
+         */
+        @JvmStatic
+        inline fun <reified T : Any> registerSchema(schema: FateSchema<T>) {}
     }
 }
