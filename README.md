@@ -158,6 +158,68 @@ class Pose2d {
 }
 ```
 
+## Schema Registry
+
+FateWeaver maintains a global schema registry that automatically caches and reuses schemas for classes.
+When you call `FateSchema.schemaOfClass()` or use a class directly with `FlightRecorder.createChannel()`,
+the library automatically creates an appropriate schema and stores it in the registry.
+
+### Registering Custom Schemas
+
+You can register custom schemas globally using `FateSchema.registerSchema()`.
+Once registered,
+your custom schema will be used automatically whenever that class type is logged,
+without needing to explicitly pass the schema to each channel creation.
+
+This is particularly useful for:
+- Defining optimized serialization for frequently-used classes
+- Overriding the default reflection-based schema
+- Ensuring consistent serialization across your entire codebase
+
+#### Kotlin Example
+
+```kotlin
+// Define your custom schema once
+val optimizedPoseSchema = CustomStructSchema<Pose2d>(
+    type = "Pose2d",
+    componentNames = listOf("x", "y", "heading"),
+    componentSchemas = listOf(DoubleSchema, DoubleSchema, DoubleSchema),
+    encoder = { pose -> 
+        listOf(pose.position.x, pose.position.y, pose.heading.toDouble())
+    }
+)
+
+// Register it globally (typically in your initialization code)
+FateSchema.registerSchema<Pose2d>(optimizedPoseSchema)
+
+// Now all channels using Pose2d will automatically use your custom schema
+val poseChannel = FlightRecorder.createChannel("Robot/Pose", Pose2d::class.java)
+// Uses optimizedPoseSchema automatically!
+```
+
+#### Java Example
+
+```java
+public class MyOpMode extends LinearOpMode {
+    @Override
+    public void runOpMode() {
+        // Register custom schema at initialization
+        CustomStructSchema<Pose2d> poseSchema = new CustomStructSchema<>(
+            "Pose2d",
+            List.of("x", "y", "heading"),
+            List.of(DoubleSchema.INSTANCE, DoubleSchema.INSTANCE, DoubleSchema.INSTANCE),
+            pose -> List.of(pose.position.x, pose.position.y, pose.heading.toDouble())
+        );
+        
+        FateSchema.registerSchema(Pose2d.class, poseSchema);
+        
+        // All channels created after registration use the custom schema
+        FlightLogChannel<Pose2d> poseChannel = FlightRecorder.createChannel("Robot/Pose", Pose2d.class);
+        // Automatically uses poseSchema!
+    }
+}
+```
+
 ## Downloading Logs
 
 To download logs to your computer, simply connect your computer to the robot's WiFi network,
