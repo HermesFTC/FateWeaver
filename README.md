@@ -65,6 +65,42 @@ public class MyOpMode extends OpMode {
 }
 ```
 
+## Using FlightRecorder as Telemetry
+
+`FlightRecorder` implements the `Telemetry` interface, 
+allowing you to use it as a drop-in replacement for the standard FTC telemetry system. 
+This means you can log telemetry data directly to your flight recorder logs while maintaining familiar telemetry syntax,
+or to use with FTC Dashboard's `MultipleTelemetry` or FTC Panels' `JoinedTelemetry` to write to
+your dashboard of choice and a log at the same time.
+
+### Basic Telemetry Logging
+
+```java
+public class MyOpMode extends OpMode {
+    @Override
+    public void init() {
+        // Use FlightRecorder just like regular telemetry
+        FlightRecorder.addData("Status", "Initialized");
+        FlightRecorder.update();
+    }
+
+    @Override
+    public void loop() {
+        // Add data and update - values are automatically logged to channels
+        FlightRecorder.addData("Runtime", getRuntime());
+        FlightRecorder.addData("Heading", "%.1f degrees", getHeading());
+        FlightRecorder.update();
+    }
+}
+```
+
+### Important Notes
+
+- When you add data with a new caption, FlightRecorder automatically creates a log channel for it.
+- You must call `FlightRecorder.update()` to actually write the telemetry data to the log; this is similar to how the standard telemetry system works.
+- All telemetry data is logged as strings to maintain compatibility with the Telemetry interface.
+- Some Telemetry methods like `clear()`, `speak()`, and `log()` are not supported and will throw `UnsupportedOperationException` if called.
+
 ## Advanced Schema Features
 
 ### Typed Classes with AS_TYPE
