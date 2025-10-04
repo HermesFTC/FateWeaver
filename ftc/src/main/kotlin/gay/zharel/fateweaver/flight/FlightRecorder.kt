@@ -11,8 +11,11 @@ import gay.zharel.fateweaver.log.FateLogWriter
 import gay.zharel.fateweaver.schemas.FateSchema
 import gay.zharel.fateweaver.log.LogChannel
 import gay.zharel.fateweaver.schemas.LongSchema
+import gay.zharel.fateweaver.schemas.StringSchema
 import org.firstinspires.ftc.ftccommon.external.WebHandlerRegistrar
 import org.firstinspires.ftc.ftccommon.internal.manualcontrol.ManualControlOpMode
+import org.firstinspires.ftc.robotcore.external.Func
+import org.firstinspires.ftc.robotcore.external.Telemetry
 import org.firstinspires.ftc.robotcore.internal.system.AppUtil
 import org.firstinspires.ftc.robotcore.internal.webserver.WebHandler
 import java.io.File
@@ -30,21 +33,11 @@ import kotlin.text.contains
 import kotlin.text.endsWith
 import kotlin.text.replace
 
-data class FlightLogChannel<T>(
-    override val name: String,
-    override val schema: FateSchema<T>,
-) : LogChannel<T> {
-    override fun put(obj: T) = FlightRecorder.write(this, obj)
-    fun write(obj: T) = put(obj)
-
-    fun downsample(maxPeriod: Long): DownsampledWriter<T> {
-        return DownsampledWriter(this, maxPeriod)
-    }
-}
-
-object FlightRecorder : OpModeManagerNotifier.Notifications {
+object FlightRecorder : OpModeManagerNotifier.Notifications, Telemetry {
     internal var writer: FateLogWriter? = null
     internal var timestampChannel: LogChannel<Long>? = null
+
+    internal var items = mutableMapOf<String, FlightLogItem>()
 
     // I'm tempted to use @OnCreate, but some of the hooks are unreliable and @WebHandlerRegistrar
     // seems to just work.
@@ -141,6 +134,7 @@ object FlightRecorder : OpModeManagerNotifier.Notifications {
             writer?.close()
             writer = null
             timestampChannel = null
+            items.clear()
         }
     }
 
@@ -182,17 +176,135 @@ object FlightRecorder : OpModeManagerNotifier.Notifications {
     fun timestamp() {
         timestampChannel?.put(System.nanoTime())
     }
-}
 
-class DownsampledWriter<T>(val channel: FlightLogChannel<T>, val maxPeriod: Long)
-    : LogChannel<T> by channel {
-    private var nextWriteTimestamp = 0L
+    override fun addData(caption: String, format: String, vararg args: Any): Telemetry.Item = if (caption in items.keys) {
+        items[caption]!!.setValue(format, *args)
+    } else {
+        val item = FlightLogItem(createChannel(caption, StringSchema), String.format(format, *args))
+        items[caption] = item
+        item
+    }
 
-    override fun put(obj: T) {
-        val now = System.nanoTime()
-        if (now >= nextWriteTimestamp) {
-            nextWriteTimestamp = (now / maxPeriod + 1) * maxPeriod
-            channel.put(obj)
+    override fun addData(caption: String, value: Any): Telemetry.Item = if (caption in items.keys) {
+        items[caption]!!.setValue(value)
+    } else {
+        val item = FlightLogItem(createChannel(caption, StringSchema), value.toString())
+        items[caption] = item
+        item
+    }
+
+    override fun <T : Any> addData(caption: String, valueProducer: Func<T>): Telemetry.Item = if (caption in items.keys) {
+        items[caption]!!.setValue(valueProducer)
+    } else {
+        val item = FlightLogItem(createChannel(caption, StringSchema), valueProducer.value().toString())
+        items[caption] = item
+        item
+    }
+
+    override fun <T : Any> addData(caption: String, format: String, valueProducer: Func<T>): Telemetry.Item = if (caption in items.keys) {
+        items[caption]!!.setValue(format, valueProducer)
+    } else {
+        val item = FlightLogItem(createChannel(caption, StringSchema), String.format(format, valueProducer.value()))
+        items[caption] = item
+        item
+    }
+
+    override fun removeItem(item: Telemetry.Item): Boolean {
+        unsupported("removeItem")
+    }
+
+    override fun clear() {
+        unsupported("clear")
+    }
+
+    override fun clearAll() {
+        unsupported("clearAll")
+    }
+
+    override fun addAction(action: Runnable): Any {
+        unsupported("addAction")
+    }
+
+    override fun removeAction(token: Any?): Boolean {
+        unsupported("removeAction")
+    }
+
+    override fun speak(text: String?) {
+        unsupported("speak")
+    }
+
+    override fun speak(text: String?, languageCode: String?, countryCode: String?) {
+        unsupported("speak")
+    }
+
+    override fun update(): Boolean {
+        items.forEach { (_, item) ->
+            item.write()
         }
+        return true
+    }
+
+    override fun addLine(): Telemetry.Line = if ("" in items.keys) {
+        items[""]!!
+    } else {
+        val item = FlightLogItem(createChannel("", StringSchema), "")
+        items[""] = item
+        item
+    }
+
+    override fun addLine(lineCaption: String): Telemetry.Line = if (lineCaption in items.keys) {
+        items[lineCaption]!!
+    } else {
+        val item = FlightLogItem(createChannel(lineCaption, StringSchema), "")
+        items[lineCaption] = item
+        item
+    }
+
+    override fun removeLine(line: Telemetry.Line): Boolean {
+        unsupported("removeLine")
+    }
+
+    override fun isAutoClear(): Boolean {
+        unsupported("removeLine")
+    }
+
+    override fun setAutoClear(autoClear: Boolean) {
+       unsupported("setAutoClear")
+    }
+
+    override fun getMsTransmissionInterval(): Int {
+        unsupported("getMsTransmissionInterval")
+    }
+
+    override fun setMsTransmissionInterval(msTransmissionInterval: Int) {
+        unsupported("setMsTransmissionInterval")
+    }
+
+    override fun getItemSeparator(): String {
+        unsupported("getItemSeparator")
+    }
+
+    override fun setItemSeparator(itemSeparator: String?) {
+        unsupported("setItemSeparator")
+    }
+
+    override fun getCaptionValueSeparator(): String? {
+        unsupported("getCaptionValueSeparator")
+    }
+
+    override fun setCaptionValueSeparator(captionValueSeparator: String?) {
+        unsupported("setCaptionValueSeparator")
+    }
+
+    override fun setDisplayFormat(displayFormat: Telemetry.DisplayFormat?) {
+        unsupported("setDisplayFormat")
+    }
+
+    override fun log(): Telemetry.Log {
+        unsupported("log")
+    }
+
+    internal fun unsupported(methodName: String): Nothing {
+        throw UnsupportedOperationException("$methodName is not supported by FlightRecorder")
     }
 }
