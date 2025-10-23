@@ -3,7 +3,7 @@
 ![Maven Central Version](https://img.shields.io/maven-central/v/gay.zharel.fateweaver/ftc?style=for-the-badge&label=Latest%20Version)
 
 A RoadRunner-log based data logging library for FTC robotics.
-Check out the [API docs](https://javadoc.io/doc/gay.zharel.fateweaver/ftc/latest/ftc/gay.zharel.hermes.fateweaver/index.html)!
+Check out the [API docs](http://docs.fate.zharel.gay/)!
 
 ## Installation
 
