@@ -6,6 +6,7 @@ import kotlin.collections.component2
 import kotlin.collections.iterator
 import kotlin.reflect.KClass
 import kotlin.reflect.KProperty1
+import kotlin.reflect.KVisibility
 import kotlin.reflect.full.companionObject
 import kotlin.reflect.full.companionObjectInstance
 import kotlin.reflect.full.memberProperties
@@ -61,10 +62,13 @@ open class ReflectedClassSchema<T : Any>(
                 typeProp.get(null)
             } else null
 
-            val fields = cls.memberProperties.associate { field ->
-                field.isAccessible = true
-                field.name to FateSchema.schemaOfClass((field.returnType.classifier as KClass<*>).java)
-            }
+            val fields = cls.memberProperties
+                .filter { field ->
+                    field.visibility == KVisibility.PUBLIC && field.returnType.classifier is KClass<*>
+                }
+                .associate { field ->
+                    field.name to FateSchema.schemaOfClass((field.returnType.classifier as KClass<*>).java)
+                }
 
             return when (type) {
                 is String -> TypedClassSchema(type, fields)
