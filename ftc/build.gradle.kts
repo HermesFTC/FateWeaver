@@ -35,7 +35,6 @@ dependencies {
     implementation(libs.kotlinx.datetime)
     implementation(libs.kotlin.reflect)
     implementation(libs.bundles.ftcsdk)
-    implementation(libs.kotlinx.html)
 
     api(project(":core"))
 }
@@ -58,4 +57,42 @@ deployer {
             docs(dokkaJar)
         }
     }
+}
+
+fun getBunExecutable(): String {
+    val os = org.gradle.internal.os.OperatingSystem.current()
+    if (os.isWindows) {
+        return "bun.cmd"
+    }
+    val home = System.getProperty("user.home")
+    val bunInHome = file("$home/.bun/bin/bun")
+    if (bunInHome.exists()) {
+        return bunInHome.absolutePath
+    }
+    return "bun"
+}
+
+val installFrontend by tasks.registering(Exec::class) {
+    workingDir = file("../frontend")
+    commandLine(getBunExecutable(), "install")
+    
+    inputs.files(fileTree("../frontend") {
+        include("package.json", "bun.lockb", "bun.lock")
+    })
+    outputs.dir(file("../frontend/node_modules"))
+}
+
+val buildFrontend by tasks.registering(Exec::class) {
+    dependsOn(installFrontend)
+    workingDir = file("../frontend")
+    commandLine(getBunExecutable(), "run", "build")
+    
+    inputs.dir(file("../frontend/src"))
+    inputs.file(file("../frontend/package.json"))
+    inputs.file(file("../frontend/vite.config.ts"))
+    outputs.dir(file("src/main/assets/web/fate"))
+}
+
+tasks.named("preBuild") {
+    dependsOn(buildFrontend)
 }

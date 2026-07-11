@@ -283,3 +283,11 @@ manager.route {
     }
 }
 ```
+
+## Development
+
+If you are cloning this repository to build FateWeaver from source or contribute, **you must have [Bun](https://bun.sh/) installed**.
+
+FateWeaver uses a modern Vue.js frontend for its web dashboard. The Android Gradle build process is configured to automatically run `bun install` and `bun run build` during compilation to bundle the frontend assets into the Android library. 
+
+If `bun` is not installed on your system, the Gradle build will fail.
