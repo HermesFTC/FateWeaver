@@ -6,14 +6,13 @@ import com.qualcomm.robotcore.util.RobotLog
 import com.qualcomm.robotcore.util.WebHandlerManager
 import fi.iki.elonen.NanoHTTPD
 import fi.iki.elonen.NanoHTTPD.IHTTPSession
-import kotlinx.html.*
-import kotlinx.html.stream.createHTML
 import org.firstinspires.ftc.ftccommon.external.WebHandlerRegistrar
 import org.firstinspires.ftc.robotcore.internal.webserver.WebHandler
 import org.firstinspires.ftc.robotserver.internal.webserver.MimeTypesUtil
 import java.io.File
 import java.io.FileInputStream
 import java.io.IOException
+import java.net.URLEncoder
 
 private fun newStaticAssetHandler(assetManager: AssetManager, file: String): WebHandler {
     return WebHandler { session: IHTTPSession ->
@@ -45,53 +44,40 @@ private fun registerAssetsUnderPath(webHandlerManager: WebHandlerManager,
     }
 }
 
-object LogFiles {
+object FateDashboard {
     @WebHandlerRegistrar
     @JvmStatic
     fun registerRoutes(context: Context, manager: WebHandlerManager) {
-        manager.register("fate/logs") {
-            val htmlContent = createHTML().html {
-                head {
-                    title("Logs")
-                }
-                body {
-                    ul {
-                        val fs = LOG_ROOT.listFiles()!!
-                        fs.sortByDescending { it.lastModified() }
-                        for (f in fs) {
-                            li {
-                                a(href = "fate/logs/download?file=${f.name}") {
-                                    attributes["download"] = f.name
-                                    +f.name
-                                }
-                                +" (${f.length()} bytes)"
-                            }
-                        }
-                    }
-                }
-            }
-            NanoHTTPD.newFixedLengthResponse(NanoHTTPD.Response.Status.OK,
-                NanoHTTPD.MIME_HTML, "<!doctype html>$htmlContent")
-        }
+        val assetManager = context.assets
+        registerAssetsUnderPath(manager, assetManager, "fate")
 
-        manager.register("fate/logs/download") { session: IHTTPSession ->
-            val pairs = session.queryParameterString.split("&".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()
-            if (pairs.size != 1) {
-                return@register NanoHTTPD.newFixedLengthResponse(NanoHTTPD.Response.Status.BAD_REQUEST,
-                    NanoHTTPD.MIME_PLAINTEXT, "expected one query parameter, got " + pairs.size)
+        manager.route {
+            get("/fate") { _, res ->
+                res.redirect("/fate/index.html")
             }
-            val parts = pairs[0].split("=".toRegex()).dropLastWhile { it.isEmpty() }.toTypedArray()
-            if (parts[0] != "file") {
-                return@register NanoHTTPD.newFixedLengthResponse(NanoHTTPD.Response.Status.BAD_REQUEST,
-                    NanoHTTPD.MIME_PLAINTEXT, "expected file query parameter, got " + parts[0])
+
+            get("/fate/logs/list") { _, res ->
+                val files = LOG_ROOT.listFiles()?.filter { it.isFile && it.name.endsWith(".log") } ?: emptyList()
+                val sorted = files.sortedByDescending { it.lastModified() }
+                val jsonItems = sorted.map { f ->
+                    val name = f.name
+                    val size = f.length()
+                    val lastMod = f.lastModified()
+                    "{\"name\":\"${name.replace("\\", "\\\\").replace("\"", "\\\"")}\",\"size\":$size,\"lastModified\":$lastMod}"
+                }
+                res.json("[${jsonItems.joinToString(",")}]")
             }
-            val f = File(LOG_ROOT, parts[1])
-            if (!f.exists()) {
-                return@register NanoHTTPD.newFixedLengthResponse(NanoHTTPD.Response.Status.NOT_FOUND,
-                    NanoHTTPD.MIME_PLAINTEXT, "file $f doesn't exist")
+
+            get("/fate/logs/download") { req, res ->
+                val fileName = req.query("file") ?: return@get res.badRequest("Missing 'file' parameter")
+                
+                // Security: disallow path traversal and restrict to .log files
+                if (fileName.contains("/") || fileName.contains("\\") || !fileName.endsWith(".log")) {
+                    return@get res.forbidden("Invalid file name")
+                }
+                
+                res.download(java.io.File(LOG_ROOT, fileName))
             }
-            NanoHTTPD.newChunkedResponse(NanoHTTPD.Response.Status.OK,
-                "application/json", FileInputStream(f))
         }
     }
 }

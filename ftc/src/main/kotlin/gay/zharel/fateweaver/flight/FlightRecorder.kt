@@ -6,7 +6,6 @@ import com.qualcomm.robotcore.eventloop.opmode.OpModeManagerImpl
 import com.qualcomm.robotcore.eventloop.opmode.OpModeManagerNotifier
 import com.qualcomm.robotcore.util.RobotLog
 import com.qualcomm.robotcore.util.WebHandlerManager
-import fi.iki.elonen.NanoHTTPD
 import gay.zharel.fateweaver.log.FateLogWriter
 import gay.zharel.fateweaver.schemas.FateSchema
 import gay.zharel.fateweaver.log.LogChannel
@@ -17,21 +16,10 @@ import org.firstinspires.ftc.ftccommon.internal.manualcontrol.ManualControlOpMod
 import org.firstinspires.ftc.robotcore.external.Func
 import org.firstinspires.ftc.robotcore.external.Telemetry
 import org.firstinspires.ftc.robotcore.internal.system.AppUtil
-import org.firstinspires.ftc.robotcore.internal.webserver.WebHandler
-import java.io.File
-import java.io.FileInputStream
-import java.net.URLEncoder
-import kotlin.collections.filter
-import kotlin.collections.joinToString
-import kotlin.collections.map
 import kotlin.collections.sortBy
-import kotlin.collections.sortedByDescending
 import kotlin.collections.sumOf
 import kotlin.jvm.javaClass
 import kotlin.run
-import kotlin.text.contains
-import kotlin.text.endsWith
-import kotlin.text.replace
 
 object FlightRecorder : OpModeManagerNotifier.Notifications, Telemetry {
     internal var writer: FateLogWriter? = null
@@ -43,51 +31,9 @@ object FlightRecorder : OpModeManagerNotifier.Notifications, Telemetry {
     // seems to just work.
     @WebHandlerRegistrar
     @JvmStatic
-    fun registerRoutes(context: Context, manager: WebHandlerManager) {
+    fun registerOpModeListener(context: Context, manager: WebHandlerManager) {
         OpModeManagerImpl.getOpModeManagerOfActivity(AppUtil.getInstance().activity)
                 .registerListener(this)
-
-        // Register web endpoints for listing and downloading flight recorder logs
-        val listHandler = WebHandler {
-            val files = LOG_ROOT.listFiles()?.filter { it.isFile && it.name.endsWith(".log") } ?: emptyList()
-            // sort by last modified desc
-            val sorted = files.sortedByDescending { it.lastModified() }
-            val jsonItems = sorted.map { f ->
-                val name = f.name
-                val size = f.length()
-                val lastMod = f.lastModified()
-                "{\"name\":\"${name.replace("\\", "\\\\").replace("\"", "\\\"")}\",\"size\":$size,\"lastModified\":$lastMod}"
-            }
-            val body = "[${jsonItems.joinToString(",")}]"
-            val resp = NanoHTTPD.newFixedLengthResponse(NanoHTTPD.Response.Status.OK, "application/json", body)
-            resp.addHeader("Cache-Control", "no-store")
-            resp
-        }
-        val downloadHandler = WebHandler { session ->
-            val params = session.parameters
-            val nameList = params["file"]
-            if (nameList == null || nameList.isEmpty()) {
-                return@WebHandler NanoHTTPD.newFixedLengthResponse(NanoHTTPD.Response.Status.BAD_REQUEST, "text/plain", "missing 'file' parameter")
-            }
-            val requested = nameList[0]
-            // Security: disallow path traversal and restrict to .log files
-            if (requested.contains("/") || requested.contains("\\") || !requested.endsWith(".log")) {
-                return@WebHandler NanoHTTPD.newFixedLengthResponse(NanoHTTPD.Response.Status.FORBIDDEN, "text/plain", "invalid file name")
-            }
-            val file = File(LOG_ROOT, requested)
-            if (!file.exists() || !file.isFile) {
-                return@WebHandler NanoHTTPD.newFixedLengthResponse(NanoHTTPD.Response.Status.NOT_FOUND, "text/plain", "file not found")
-            }
-            val fis = FileInputStream(file)
-            val resp = NanoHTTPD.newChunkedResponse(NanoHTTPD.Response.Status.OK, "application/octet-stream", fis)
-            val encoded = try { URLEncoder.encode(file.name, "UTF-8") } catch (_: Exception) { file.name }
-            resp.addHeader("Content-Disposition", "attachment; filename=\"$encoded\"")
-            resp.addHeader("Cache-Control", "no-store")
-            resp
-        }
-
-        manager.register("/dash/logs/list", listHandler)
-        manager.register("/dash/logs/download", downloadHandler)
     }
 
     override fun onOpModePreInit(opMode: OpMode?) {
@@ -165,8 +111,8 @@ object FlightRecorder : OpModeManagerNotifier.Notifications, Telemetry {
      * Creates a new log channel attached to the current OpMode's writer.
      */
     @JvmStatic
-    fun <T : Any> createChannel(name: String, clazz: Class<T>): FlightLogChannel<T> {
-        return createChannel(name, FateSchema.schemaOfClass(clazz))
+    fun <T : Any> createChannel(name: String, cls: Class<T>): FlightLogChannel<T> {
+        return createChannel(name, FateSchema.schemaOfClass(cls))
     }
 
     /**
