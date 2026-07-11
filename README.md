@@ -30,7 +30,8 @@ dependencies {
 
 - Easy-to-use logging API with `FlightRecorder` and `FlightLogChannel`!
 - Type-safe channels, including support for custom data types using reflection!
-- Downloading logs to your computer for viewing with AdvantageScope!
+- Modern Vue.js-based web dashboard for downloading and managing logs!
+- Clean `FateRouter` DSL for easily creating your own custom web routes!
 - Backwards-compatibility with existing RoadRunner FlightRecorder API.
 - Support for typed classes with `AS_TYPE` and fully customizable serialization with `CustomStructSchema`!
 
@@ -256,7 +257,29 @@ public class MyOpMode extends LinearOpMode {
 }
 ```
 
-## Downloading Logs
+## Web Dashboard & Downloading Logs
 
-To download logs to your computer, simply connect your computer to the robot's WiFi network,
-and go to `192.168.43.1:8080/fate/logs` in your browser.
+FateWeaver includes a sleek, modern Vue.js web dashboard served directly from the robot! 
+
+To view and download your logs:
+1. Connect your computer to the robot's WiFi network (Control Hub: `192.168.43.1`, Phone: `192.168.49.1`).
+2. Navigate to `http://192.168.43.1:8080/fate` in your web browser.
+
+From there, you can view file sizes, last modified dates, and download logs directly for viewing in AdvantageScope.
+
+## Custom Web Routes (FateRouter)
+
+FateWeaver includes a clean, modern Domain Specific Language (DSL) called `FateRouter` to abstract away the boilerplate of the FTC SDK's NanoHTTPD web server. This allows you to easily create your own web APIs directly on the robot!
+
+```kotlin
+manager.route {
+    get("/api/status") { req, res ->
+        res.json("{\"status\": \"ok\", \"battery\": 12.4}")
+    }
+
+    get("/api/download") { req, res ->
+        val fileName = req.query("file") ?: return@get res.badRequest("Missing 'file' parameter")
+        res.download(File(LOG_ROOT, fileName))
+    }
+}
+```
