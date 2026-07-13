@@ -9,9 +9,16 @@ import kotlin.reflect.KProperty1
 import kotlin.reflect.KVisibility
 import kotlin.reflect.full.companionObject
 import kotlin.reflect.full.companionObjectInstance
+import kotlin.reflect.full.findAnnotation
+import kotlin.reflect.full.hasAnnotation
 import kotlin.reflect.full.memberProperties
 import kotlin.reflect.full.staticProperties
 import kotlin.reflect.jvm.isAccessible
+
+@MustBeDocumented
+@Target(AnnotationTarget.PROPERTY, AnnotationTarget.FIELD)
+@Retention(AnnotationRetention.RUNTIME)
+annotation class FateIgnore
 
 open class ReflectedClassSchema<T : Any>(
     val fields: Map<String, FateSchema<*>>,
@@ -64,7 +71,8 @@ open class ReflectedClassSchema<T : Any>(
 
             val fields = cls.memberProperties
                 .filter { field ->
-                    field.visibility == KVisibility.PUBLIC && field.returnType.classifier is KClass<*>
+                    field.visibility == KVisibility.PUBLIC && field.returnType.classifier is KClass<*> &&
+                            !field.hasAnnotation<FateIgnore>()
                 }
                 .associate { field ->
                     field.name to FateSchema.schemaOfClass((field.returnType.classifier as KClass<*>).java)

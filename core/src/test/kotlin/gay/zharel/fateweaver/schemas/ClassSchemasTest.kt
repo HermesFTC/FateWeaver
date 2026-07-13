@@ -712,4 +712,59 @@ class ClassSchemasTest {
 
         assertEquals(0, buffer.remaining())
     }
+
+    data class ClassWithIgnoredField(
+        val normalField: Int,
+        @FateIgnore val ignoredField: String
+    )
+
+    @Test
+    fun testFateIgnoreAnnotation() {
+        val schema = ReflectedClassSchema.createFromClass(ClassWithIgnoredField::class.java)
+        
+        // The schema should only have 1 field (normalField) because ignoredField has @FateIgnore
+        assertEquals(1, schema.fields.size)
+        assertTrue(schema.fields.containsKey("normalField"))
+        assertFalse(schema.fields.containsKey("ignoredField"))
+
+        val testObj = ClassWithIgnoredField(42, "this should be ignored")
+
+        // The size should just be the size of the Int field (4 bytes)
+        assertEquals(4, schema.objSize(testObj))
+
+        val buffer = ByteBuffer.allocate(4)
+        schema.encodeObject(buffer, testObj)
+        buffer.flip()
+
+        // Verify only the normal field was serialized
+        assertEquals(42, buffer.int)
+        assertEquals(0, buffer.remaining())
+    }
+
+    @Test
+    fun testJavaClassReflectionAndIgnore() {
+        // Test that a standard Java class with public fields gets reflected correctly,
+        // and that @FateIgnore works on Java fields too!
+        val schema = ReflectedClassSchema.createFromClass(JavaTestClass::class.java)
+
+        // It should pick up normalField and anotherField, but drop ignoredField
+        assertEquals(2, schema.fields.size)
+        assertTrue(schema.fields.containsKey("normalField"))
+        assertTrue(schema.fields.containsKey("anotherField"))
+        assertFalse(schema.fields.containsKey("ignoredField"))
+
+        val testObj = JavaTestClass(42, 3.14, "this should be ignored")
+
+        // 4 bytes (int) + 8 bytes (double)
+        val expectedSize = 12
+        assertEquals(expectedSize, schema.objSize(testObj))
+
+        val buffer = ByteBuffer.allocate(expectedSize)
+        schema.encodeObject(buffer, testObj)
+        buffer.flip()
+
+        assertEquals(42, buffer.int)
+        assertEquals(3.14, buffer.double)
+        assertEquals(0, buffer.remaining())
+    }
 }
