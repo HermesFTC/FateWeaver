@@ -222,6 +222,7 @@ sealed interface FateSchema<T> {
 
     companion object Companion {
         private val registry = mutableMapOf<KClass<*>, FateSchema<*>>()
+        private val resolving = mutableSetOf<KClass<*>>()
 
         /**
          * Returns a map of all registered schemas.
@@ -368,8 +369,16 @@ sealed interface FateSchema<T> {
         fun <T : Any> schemaOfClass(cls: KClass<T>): FateSchema<T> = if (cls in registry.keys) {
             registry[cls] as FateSchema<T>
         } else {
-            createSchemaForClass(cls.java).also {
-                registry[cls] = it
+            if (cls in resolving) {
+                throw IllegalArgumentException("Cyclic reference detected for class ${cls.qualifiedName}. FateWeaver schemas do not support cyclic or self-referential structures.")
+            }
+            resolving.add(cls)
+            try {
+                createSchemaForClass(cls.java).also {
+                    registry[cls] = it
+                }
+            } finally {
+                resolving.remove(cls)
             }
         }
 
