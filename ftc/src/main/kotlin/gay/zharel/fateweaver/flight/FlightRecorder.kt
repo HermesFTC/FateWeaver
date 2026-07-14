@@ -1,39 +1,40 @@
 package gay.zharel.fateweaver.flight
 
+import android.annotation.SuppressLint
 import android.content.Context
+import com.qualcomm.ftccommon.FtcEventLoop
 import com.qualcomm.robotcore.eventloop.opmode.OpMode
 import com.qualcomm.robotcore.eventloop.opmode.OpModeManagerImpl
 import com.qualcomm.robotcore.eventloop.opmode.OpModeManagerNotifier
 import com.qualcomm.robotcore.util.RobotLog
-import com.qualcomm.robotcore.util.WebHandlerManager
 import gay.zharel.fateweaver.log.FateLogWriter
 import gay.zharel.fateweaver.schemas.FateSchema
 import gay.zharel.fateweaver.log.LogChannel
 import gay.zharel.fateweaver.schemas.LongSchema
 import gay.zharel.fateweaver.schemas.StringSchema
-import org.firstinspires.ftc.ftccommon.external.WebHandlerRegistrar
+import org.firstinspires.ftc.ftccommon.external.OnCreateEventLoop
 import org.firstinspires.ftc.ftccommon.internal.manualcontrol.ManualControlOpMode
 import org.firstinspires.ftc.robotcore.external.Func
 import org.firstinspires.ftc.robotcore.external.Telemetry
-import org.firstinspires.ftc.robotcore.internal.system.AppUtil
 import kotlin.collections.sortBy
 import kotlin.collections.sumOf
-import kotlin.jvm.javaClass
 import kotlin.run
 
 object FlightRecorder : OpModeManagerNotifier.Notifications, Telemetry {
+    @SuppressLint("StaticFieldLeak")
+    internal lateinit var opModeManager: OpModeManagerImpl
+
     internal var writer: FateLogWriter? = null
+
     internal var timestampChannel: LogChannel<Long>? = null
 
     internal var items = mutableMapOf<String, FlightLogItem>()
 
-    // I'm tempted to use @OnCreate, but some of the hooks are unreliable and @WebHandlerRegistrar
-    // seems to just work.
-    @WebHandlerRegistrar
+    @OnCreateEventLoop
     @JvmStatic
-    fun registerOpModeListener(context: Context, manager: WebHandlerManager) {
-        OpModeManagerImpl.getOpModeManagerOfActivity(AppUtil.getInstance().activity)
-                .registerListener(this)
+    fun registerOpModeListener(context: Context, eventLoop: FtcEventLoop) {
+        opModeManager = eventLoop.opModeManager
+        opModeManager.registerListener(this)
     }
 
     override fun onOpModePreInit(opMode: OpMode?) {
@@ -62,7 +63,7 @@ object FlightRecorder : OpModeManagerNotifier.Notifications, Telemetry {
                 return
             }
 
-            writer = FateLogManager.start(opMode?.javaClass?.simpleName ?: "UnknownOpMode")
+            writer = FateLogManager.start(opModeManager.activeOpModeName)
             timestampChannel = createChannel("TIMESTAMP", LongSchema)
 
             write("OPMODE_PRE_INIT", System.nanoTime())
