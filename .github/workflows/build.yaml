@@ -23,6 +23,9 @@ jobs:
           build-scan-terms-of-use-url: 'https://gradle.com/terms-of-service'
           build-scan-terms-of-use-agree: 'yes'
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
       - name: Build with Gradle
         run: ./gradlew build
 
