@@ -218,7 +218,7 @@ class ClassSchemasTest {
 
         // Verify schema encoding
         assertEquals(FateSchema.TypeRegistry.CUSTOM.value, buffer.int) // tag
-        assertEquals(4, buffer.int) // number of fields (including type field)
+        assertEquals(5, buffer.int) // number of fields (including type field)
 
         // Verify .type field is encoded first
         val typeFieldNameLength = buffer.int
@@ -461,7 +461,7 @@ class ClassSchemasTest {
 
         // Verify schema encoding
         assertEquals(FateSchema.TypeRegistry.CUSTOM.value, buffer.int) // tag
-        assertEquals(3, buffer.int) // number of components
+        assertEquals(4, buffer.int) // number of components (including type field)
 
         // Verify .type field is encoded first in schema
         val typeFieldNameLength = buffer.int

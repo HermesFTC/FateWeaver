@@ -1,6 +1,7 @@
 package gay.zharel.fateweaver.schemas
 
 import java.nio.ByteBuffer
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.collections.component1
 import kotlin.collections.component2
 import kotlin.collections.iterator
@@ -42,19 +43,50 @@ open class ReflectedClassSchema<T : Any>(
         buffer.array()
     }
 
-    @Suppress("UNCHECKED_CAST")
-    override fun objSize(obj: T): Int = fields.map { (name, schema) ->
-        val field: KProperty1<T, *> = obj::class.memberProperties.find { it.name == name }!! as KProperty1<T, *>
-        val fieldValue = field.get(obj)!!
-        (schema as FateSchema<Any>).objSize(fieldValue)
-    }.sum()
+    /**
+     * Resolved property accessors, keyed by the *runtime* class of the encoded object.
+     *
+     * A schema built from a superclass may be handed instances of a subclass, so the lookup
+     * cannot be keyed on the class the schema was created from.
+     */
+    private val accessors = ConcurrentHashMap<KClass<*>, List<Accessor>>()
 
+    /**
+     * A property paired with the schema used to encode its value, resolved once per runtime class.
+     */
+    protected class Accessor(val property: KProperty1<Any, *>, val schema: FateSchema<Any>)
+
+    /**
+     * Returns the accessors for [obj]'s runtime class, in [fields] iteration order.
+     */
     @Suppress("UNCHECKED_CAST")
+    protected fun accessorsFor(obj: T): List<Accessor> = accessors.getOrPut(obj::class) {
+        val properties = obj::class.memberProperties.associateBy { it.name }
+        fields.map { (name, schema) ->
+            val property = properties[name] ?: throw IllegalArgumentException(
+                "Cannot encode ${obj::class.qualifiedName}: schema declares field '$name', " +
+                        "but the class has no such property."
+            )
+            property.isAccessible = true
+            Accessor(property as KProperty1<Any, *>, schema as FateSchema<Any>)
+        }
+    }
+
+    /**
+     * Reads [accessor]'s value from [obj], rejecting nulls: the format has no encoding for null.
+     */
+    protected fun valueOf(accessor: Accessor, obj: T): Any =
+        accessor.property.get(obj) ?: throw IllegalArgumentException(
+            "Cannot encode ${obj::class.qualifiedName}.${accessor.property.name}: value is null, " +
+                    "and the FateWeaver binary format has no encoding for null."
+        )
+
+    override fun objSize(obj: T): Int =
+        accessorsFor(obj).sumOf { it.schema.objSize(valueOf(it, obj)) }
+
     override fun encodeObject(buffer: ByteBuffer, obj: T) {
-        for ((name, schema) in fields) {
-            val field: KProperty1<T, *> = obj::class.memberProperties.find { it.name == name }!! as KProperty1<T, *>
-            val fieldValue = field.get(obj)!!
-            (schema as FateSchema<Any>).encodeObject(buffer, fieldValue)
+        for (accessor in accessorsFor(obj)) {
+            accessor.schema.encodeObject(buffer, valueOf(accessor, obj))
         }
     }
 
@@ -69,13 +101,14 @@ open class ReflectedClassSchema<T : Any>(
                 typeProp.get(null)
             } else null
 
+            val owner = cls.qualifiedName ?: cls.java.name
             val fields = cls.memberProperties
                 .filter { field ->
                     field.visibility == KVisibility.PUBLIC && field.returnType.classifier is KClass<*> &&
                             !field.hasAnnotation<FateIgnore>()
                 }
                 .associate { field ->
-                    field.name to FateSchema.schemaOfClass((field.returnType.classifier as KClass<*>).java)
+                    field.name to FateSchema.schemaOfType(field.returnType, "$owner.${field.name}")
                 }
 
             return when (type) {
@@ -103,7 +136,7 @@ class TypedClassSchema<T : Any>(
     override val schema: ByteArray by lazy {
         val buffer = ByteBuffer.allocate(schemaSize)
         buffer.putInt(tag)
-        buffer.putInt(fields.size)
+        buffer.putInt(fields.size + 1)
         TYPE_FIELD.first.toByteArray().let {
             buffer.putInt(it.size)
             buffer.put(it)
@@ -118,20 +151,13 @@ class TypedClassSchema<T : Any>(
         buffer.array()
     }
 
-    @Suppress("UNCHECKED_CAST")
-    override fun objSize(obj: T): Int = TYPE_FIELD.second.objSize(type) + fields.map { (name, schema) ->
-        val field: KProperty1<T, *> = obj::class.memberProperties.find { it.name == name }!! as KProperty1<T, *>
-        val fieldValue = field.get(obj)!!
-        (schema as FateSchema<Any>).objSize(fieldValue)
-    }.sum()
+    override fun objSize(obj: T): Int = TYPE_FIELD.second.objSize(type) +
+            accessorsFor(obj).sumOf { it.schema.objSize(valueOf(it, obj)) }
 
-    @Suppress("UNCHECKED_CAST")
     override fun encodeObject(buffer: ByteBuffer, obj: T) {
         TYPE_FIELD.second.encodeObject(buffer, type)
-        for ((name, schema) in fields) {
-            val field: KProperty1<T, *> = obj::class.memberProperties.find { it.name == name }!! as KProperty1<T, *>
-            val fieldValue = field.get(obj)!!
-            (schema as FateSchema<Any>).encodeObject(buffer, fieldValue)
+        for (accessor in accessorsFor(obj)) {
+            accessor.schema.encodeObject(buffer, valueOf(accessor, obj))
         }
     }
 
@@ -288,7 +314,7 @@ class CustomStructSchema<T : Any>(
     override val schema: ByteArray by lazy {
         val buffer = ByteBuffer.allocate(schemaSize)
         buffer.putInt(tag)
-        buffer.putInt(componentNames.size)
+        buffer.putInt(componentNames.size + 1)
         TYPE_FIELD.first.toByteArray().let {
             buffer.putInt(it.size)
             buffer.put(it)
