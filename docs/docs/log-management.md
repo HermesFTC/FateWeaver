@@ -33,6 +33,12 @@ FateWeaver provides a built-in web interface for downloading log files from your
 3. **Wait for Processing**: AdvantageScope will parse the log file
 4. **Explore Data**: Browse the data tree on the left
 
+!!! warning "Map channels need an up-to-date decoder"
+    Map channels use schema tag 8, which was added after the initial format release. Log entries are
+    not length-prefixed, so a decoder that doesn't recognize the tag cannot skip past it and will
+    stop reading at that point — the log appears truncated rather than reporting an error. Make sure
+    your viewer supports MAP before producing logs that contain map channels.
+
 ### Key AdvantageScope Features
 
 #### Data Tree Navigation

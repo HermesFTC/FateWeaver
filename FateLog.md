@@ -7,7 +7,7 @@ Robotics and embedded applications generate diverse telemetry at high rates. Tex
 
 - Efficient writes and reads with fixed/known sizes
 - Self‑describing streams via schema announcements
-- Support for primitives, arrays, enums, and structured objects
+- Support for primitives, arrays, maps, enums, and structured objects
 
 ## Definitions
 
@@ -117,6 +117,7 @@ All schemas begin with a 4‑byte type tag (int) defined by the TypeRegistry:
 - 5 = BOOLEAN (single byte, 0x00 = false, 0x01 = true)
 - 6 = ENUM (ordinal‑encoded with declared constant names)
 - 7 = ARRAY (homogeneous array)
+- 8 = MAP (key/value mapping with independently typed keys and values)
 
 The schema payload that follows the tag depends on the tag value:
 
@@ -135,6 +136,15 @@ The schema payload that follows the tag depends on the tag value:
   Objects are encoded as:
   - 4 bytes: element count K (int)
   - K elements: each element encoded with the element schema
+
+- MAP
+  - Nested schema bytes for the key type: one complete schema blob (tag + payload)
+  - Nested schema bytes for the value type: one complete schema blob (tag + payload)
+  Objects are encoded as:
+  - 4 bytes: entry count N (int)
+  - N entries, each: the key encoded with the key schema, immediately followed by the value encoded with the value schema
+
+  Keys may use any schema, not just STRING; enum, array and CUSTOM keys are all legal. Entry order is writer‑defined and carries no meaning — every key is written explicitly, so readers must not rely on ordering. Keys are expected to be unique; a reader encountering duplicate keys should not assume the decoded entry count matches N.
 
 - CUSTOM (structured object)
   Represents a structured object with named fields. The schema describes the field layout, and objects are encoded as the concatenation of field values in declaration order.
@@ -176,6 +186,7 @@ All numbers are big‑endian.
 - Header version is a 16‑bit integer. Current version is 1.
 - Readers must reject files with unsupported versions.
 - Schema tags (TypeRegistry values) are stable and part of the wire contract.
+- New schema tags are added additively, without a version bump. Because entries are not length‑prefixed, a reader that encounters an unknown schema tag cannot skip it: the tag desynchronizes the remainder of the stream, not just the offending channel. Third‑party decoders should therefore be updated *before* logs using a new tag are produced. MAP (tag 8) was added this way, so files using it are unreadable by decoders predating it despite still declaring header version 1.
 
 ## Examples
 
@@ -199,6 +210,17 @@ Below are illustrative, not exhaustive, and omit some lengths for brevity. All i
    - Array length: 00 00 00 02
    - Pose[0]: x(double) 40 00 00 00 00 00 00 00; y(double) 40 08 00 00 00 00 00 00
    - Pose[1]: x(double) 40 10 00 00 00 00 00 00; y(double) 40 14 00 00 00 00 00 00
+
+4) Declare a channel named "motorPowers" with schema: MAP from STRING to DOUBLE, then one message
+   - Entry kind: 00 00 00 00
+   - Name length: 00 00 00 0B; name: 6D 6F 74 6F 72 50 6F 77 65 72 73
+   - Schema: MAP tag 00 00 00 08
+     - Key schema: STRING 00 00 00 04
+     - Value schema: DOUBLE 00 00 00 03
+   - Entry kind: 00 00 00 01; channel index: 00 00 00 00
+     - Entry count: 00 00 00 02
+     - Entry[0]: key length 00 00 00 02; 66 6C ("fl"); value 3F E0 00 00 00 00 00 00 (0.5)
+     - Entry[1]: key length 00 00 00 02; 66 72 ("fr"); value BF E0 00 00 00 00 00 00 (‑0.5)
 
 ## Notes
 

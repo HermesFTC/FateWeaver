@@ -9,6 +9,7 @@ import gay.zharel.fateweaver.schemas.EnumSchema
 import gay.zharel.fateweaver.schemas.FateSchema
 import gay.zharel.fateweaver.schemas.IntSchema
 import gay.zharel.fateweaver.schemas.LongSchema
+import gay.zharel.fateweaver.schemas.MapSchema
 import gay.zharel.fateweaver.schemas.ReflectedClassSchema
 import gay.zharel.fateweaver.schemas.StringSchema
 import gay.zharel.fateweaver.schemas.TranslatedSchema
@@ -153,6 +154,7 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
             FateSchema.TypeRegistry.BOOLEAN.value -> BooleanSchema
             FateSchema.TypeRegistry.ENUM.value -> readEnumSchema()
             FateSchema.TypeRegistry.ARRAY.value -> readArraySchema()
+            FateSchema.TypeRegistry.MAP.value -> readMapSchema()
             else -> throw IllegalArgumentException("Unknown schema tag: $tag")
         }
     }
@@ -184,6 +186,15 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
     private fun readArraySchema(): ArraySchema<*> {
         val elementSchema = readSchema()
         return ArraySchema(elementSchema)
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun readMapSchema(): MapSchema<Any, Any> {
+        // Both calls consume from the same stream, and the writer emits the key schema first,
+        // so these must stay as separate ordered statements.
+        val keySchema = readSchema() as FateSchema<Any>
+        val valueSchema = readSchema() as FateSchema<Any>
+        return MapSchema(keySchema, valueSchema)
     }
 
     private fun readStructSchema(): ReflectedClassSchema<*> {
@@ -287,6 +298,24 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
                     elements.add(readObject(schema.elementSchema))
                 }
                 elements.toTypedArray()
+            }
+            is MapSchema<*, *> -> {
+                // Read entry count
+                val countBytes = ByteArray(4)
+                stream.read(countBytes)
+                val count = ByteBuffer.wrap(countBytes).int
+                require(count >= 0) { "Invalid map entry count: $count" }
+
+                // Read entries in on-wire order. The pre-sized capacity is capped so a corrupt
+                // count cannot allocate its way to an OutOfMemoryError; the loop below fails
+                // naturally once the stream runs dry.
+                val entries = LinkedHashMap<Any, Any>(minOf(count, 1024))
+                repeat(count) {
+                    val key = readObject(schema.keySchema)
+                    val value = readObject(schema.valueSchema)
+                    entries[key] = value
+                }
+                entries
             }
             is ReflectedClassSchema<*> -> {
                 val fieldValues = mutableMapOf<String, Any>()

@@ -3,6 +3,9 @@ package gay.zharel.fateweaver.schemas
 import java.nio.ByteBuffer
 import kotlin.jvm.kotlin
 import kotlin.reflect.KClass
+import kotlin.reflect.KType
+import kotlin.reflect.KTypeParameter
+import kotlin.reflect.full.isSubclassOf
 
 /**
  * Core interface for defining serialization schemas in the FateWeaver logging system.
@@ -27,6 +30,7 @@ import kotlin.reflect.KClass
  *
  * ### Collection Schemas
  * - `ArraySchema<T>`: Arrays of any supported type T
+ * - `MapSchema<K, V>`: Maps with independently typed keys and values
  * - `EnumSchema<T>`: Enumeration types with ordinal encoding
  *
  * ### Class Schemas
@@ -217,12 +221,28 @@ sealed interface FateSchema<T> {
         ENUM(6),
 
         /** Array schema for collections of homogeneous elements */
-        ARRAY(7);
+        ARRAY(7),
+
+        /** Map schema with independently typed keys and values */
+        MAP(8);
     }
 
     companion object Companion {
         private val registry = mutableMapOf<KClass<*>, FateSchema<*>>()
         private val resolving = mutableSetOf<KClass<*>>()
+
+        /**
+         * Cache for schemas of *parameterized* types.
+         *
+         * Keyed by [KType] rather than [KClass] because a generic schema depends on its type
+         * arguments: `Map<String, Int>` and `Map<String, Double>` are distinct schemas that share
+         * the classifier `Map::class`, so they cannot live in [registry]. [KType] has structural
+         * equality, which makes it a sound key.
+         *
+         * Only fully resolved types reach this map, and entries are written only after a schema is
+         * completely built, so a failed resolution leaves nothing cached.
+         */
+        private val parameterizedRegistry = mutableMapOf<KType, FateSchema<*>>()
 
         /**
          * Returns a map of all registered schemas.
@@ -251,6 +271,13 @@ sealed interface FateSchema<T> {
          * **Collection Types**:
          * - `T[]` → [ArraySchema]<T> (recursive schema inference for element type)
          * - `Enum<T>` → [EnumSchema]<T>
+         *
+         * **Generic Types**:
+         *
+         * A [Class] carries no type arguments, so `Map` and `Collection` types cannot be inferred
+         * here and are rejected. Use [schemaOfType] when a [kotlin.reflect.KType] is available
+         * (this is what reflected class *fields* go through), or construct the schema explicitly,
+         * e.g. `MapSchema(StringSchema, DoubleSchema)`.
          *
          * **Class Types**:
          * - Classes with companion object `as_type` property → [TypedClassSchema]
@@ -292,9 +319,11 @@ sealed interface FateSchema<T> {
          * @see IntSchema
          * @see StringSchema
          * @see ArraySchema
+         * @see MapSchema
          * @see EnumSchema
          * @see ReflectedClassSchema
          * @see TypedClassSchema
+         * @see schemaOfType
          */
         @Suppress("UNCHECKED_CAST")
         @JvmStatic
@@ -319,6 +348,13 @@ sealed interface FateSchema<T> {
          * **Collection Types**:
          * - `T[]` → [ArraySchema]<T> (recursive schema inference for element type)
          * - `Enum<T>` → [EnumSchema]<T>
+         *
+         * **Generic Types**:
+         *
+         * A [Class] carries no type arguments, so `Map` and `Collection` types cannot be inferred
+         * here and are rejected. Use [schemaOfType] when a [kotlin.reflect.KType] is available
+         * (this is what reflected class *fields* go through), or construct the schema explicitly,
+         * e.g. `MapSchema(StringSchema, DoubleSchema)`.
          *
          * **Class Types**:
          * - Classes with companion object `as_type` property → [TypedClassSchema]
@@ -360,9 +396,11 @@ sealed interface FateSchema<T> {
          * @see IntSchema
          * @see StringSchema
          * @see ArraySchema
+         * @see MapSchema
          * @see EnumSchema
          * @see ReflectedClassSchema
          * @see TypedClassSchema
+         * @see schemaOfType
          */
         @JvmStatic
         @Suppress("UNCHECKED_CAST")
@@ -412,6 +450,142 @@ sealed interface FateSchema<T> {
         @JvmStatic
         inline fun <reified T : Any> registerSchema(schema: FateSchema<T>) = registerSchema(T::class, schema)
 
+        /**
+         * Creates a schema for a fully resolved Kotlin type, honouring generic type arguments.
+         *
+         * Unlike [schemaOfClass], which only ever sees the erased class, this understands
+         * `Map<K, V>`, `List<T>`, `Set<T>` and `Collection<T>`:
+         *
+         * - `Map<K, V>` becomes a [MapSchema] with independently inferred key and value schemas.
+         * - `List`/`Set`/`Collection<T>` are encoded with the ARRAY wire format, via a
+         *   [TranslatedSchema] over an [ArraySchema], so they are byte-identical to `T[]`.
+         * - Everything else defers to [schemaOfClass], preserving its exact behavior.
+         *
+         * A schema registered for a class with [registerSchema] always wins, for every
+         * parameterization of that class.
+         *
+         * @param type The type to build a schema for
+         * @return A schema capable of serializing values of [type]
+         * @throws IllegalArgumentException if [type], or any of its type arguments, cannot be
+         *   schematized — star projections, type variables, `Any`, and nullable type arguments are
+         *   all rejected.
+         */
+        @JvmStatic
+        fun schemaOfType(type: KType): FateSchema<*> = schemaOfType(type, type.toString())
+
+        /**
+         * Creates a schema for a fully resolved Kotlin type.
+         *
+         * @param path Human-readable description of where this type came from, used in diagnostics
+         *   (for example `"com.example.Holder.items"`).
+         * @see schemaOfType
+         */
+        internal fun schemaOfType(type: KType, path: String): FateSchema<*> {
+            val classifier = type.classifier
+                ?: throw unschemable(path, type, "its classifier could not be resolved")
+
+            if (classifier !is KClass<*>) {
+                val name = (classifier as? KTypeParameter)?.name ?: classifier.toString()
+                throw unschemable(
+                    path, type, "'$name' is a type variable; FateWeaver needs a concrete type"
+                )
+            }
+
+            // An explicitly registered schema wins, for every combination of type arguments. This
+            // is the escape hatch for Map, Collection and anything else inference rejects.
+            registry[classifier]?.let { return it }
+            parameterizedRegistry[type]?.let { return it }
+
+            val isMap = classifier.isSubclassOf(Map::class)
+            val isCollection = classifier.isSubclassOf(Collection::class)
+
+            // Everything that is neither a Map nor a Collection keeps the pre-existing behavior:
+            // primitives, enums, arrays (including primitive arrays), and plain classes.
+            if (!isMap && !isCollection) return schemaOfClass(classifier)
+
+            @Suppress("UNCHECKED_CAST")
+            val schema: FateSchema<*> = if (isMap) {
+                requireArity(path, type, 2, "Map")
+                val keySchema = schemaOfArgument(type, 0, path) as FateSchema<Any>
+                val valueSchema = schemaOfArgument(type, 1, path) as FateSchema<Any>
+                MapSchema(keySchema, valueSchema)
+            } else {
+                requireArity(path, type, 1, "Collection")
+                val elementSchema = schemaOfArgument(type, 0, path) as FateSchema<Any>
+                TranslatedSchema<Collection<Any>, Array<Any>>(ArraySchema(elementSchema)) {
+                    it.toTypedArray()
+                }
+            }
+
+            parameterizedRegistry[type] = schema
+            return schema
+        }
+
+        /**
+         * Resolves the schema for the type argument at [index] of [owner], rejecting anything that
+         * carries too little type information to encode.
+         */
+        private fun schemaOfArgument(owner: KType, index: Int, path: String): FateSchema<*> {
+            val position = "type argument #${index + 1}"
+
+            val argType = owner.arguments[index].type ?: throw unschemable(
+                path, owner, "$position is a star projection ('*'), which carries no type information"
+            )
+
+            if (argType.isMarkedNullable) {
+                throw unschemable(
+                    path, owner,
+                    "$position ('$argType') is nullable, and the FateWeaver binary format has no " +
+                            "encoding for null"
+                )
+            }
+
+            val argClassifier = argType.classifier
+            if (argClassifier !is KClass<*>) {
+                val name = (argClassifier as? KTypeParameter)?.name ?: "<unresolved>"
+                throw unschemable(
+                    path, owner,
+                    "$position ('$name') is a type variable; FateWeaver needs a concrete type"
+                )
+            }
+
+            // `Any` is rejected only in type-argument position: a heterogeneous Map<String, Any>
+            // has no fixed shape. The registry check comes first so a user-registered schema for
+            // Any::class still wins.
+            if (argClassifier !in registry.keys && argClassifier == Any::class) {
+                throw unschemable(
+                    path, owner, "$position is 'kotlin.Any', which carries no field information"
+                )
+            }
+
+            return schemaOfType(argType, "$path ($position)")
+        }
+
+        private fun requireArity(path: String, type: KType, expected: Int, kind: String) {
+            if (type.arguments.size != expected) {
+                throw unschemable(
+                    path, type,
+                    "it is a raw $kind with ${type.arguments.size} type arguments; $expected are required"
+                )
+            }
+        }
+
+        private fun unschemable(path: String, type: KType, reason: String) = IllegalArgumentException(
+            "Cannot infer a FateWeaver schema for $path (declared type '$type'): $reason. " +
+                    "Use a concrete, non-null type; or mark the property with @FateIgnore; " +
+                    "or register a schema explicitly with FateSchema.registerSchema(...)."
+        )
+
+        /**
+         * Clears all inferred and registered schemas. Intended for test isolation, since a schema
+         * registered for a widely used class would otherwise leak across tests in the same JVM.
+         */
+        internal fun clearInferenceCaches() {
+            registry.clear()
+            resolving.clear()
+            parameterizedRegistry.clear()
+        }
+
         @Suppress("UNCHECKED_CAST")
         private fun <T : Any> createSchemaForClass(cls: Class<T>) = when (cls) {
             Int::class.java, Integer::class.java -> IntSchema
@@ -423,7 +597,19 @@ sealed interface FateSchema<T> {
                 if (cls.isEnum) {
                     EnumSchema(cls as Class<out Enum<*>>)
                 } else if (cls.isArray) {
+                    // Checked before the map/collection guard below: an array's component type is
+                    // preserved on the Class, so arrays need no type-argument information.
                     ArraySchema(schemaOfClass(cls.componentType!!))
+                } else if (java.util.Map::class.java.isAssignableFrom(cls) ||
+                    java.util.Collection::class.java.isAssignableFrom(cls)
+                ) {
+                    throw IllegalArgumentException(
+                        "Cannot infer a FateWeaver schema for the raw class ${cls.name}: map and " +
+                                "collection element types are erased on Class, so they cannot be " +
+                                "recovered here. Infer from a declared property instead, call " +
+                                "FateSchema.schemaOfType(typeOf<...>()), or construct the schema " +
+                                "explicitly, e.g. MapSchema(StringSchema, DoubleSchema)."
+                    )
                 } else {
                     ReflectedClassSchema.createFromClass(cls)
                 }

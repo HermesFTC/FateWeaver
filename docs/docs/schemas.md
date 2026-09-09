@@ -29,6 +29,7 @@ graph TD
 
     C --> C1[ArraySchema]
     C --> C2[EnumSchema]
+    C --> C3[MapSchema]
 
     D --> D1[ReflectedClassSchema]
     D --> D2[TypedClassSchema]
@@ -190,6 +191,35 @@ Handles arrays of any supported type with length prefixes.
 !!! tip "Primitive Arrays"
     For primitive arrays (int[], double[], etc.), FateWeaver automatically boxes them. Consider using custom schemas for better performance with large arrays.
 
+### MapSchema<K, V>
+
+Handles maps with an entry count prefix. Keys are not restricted to strings — any supported type works.
+
+=== "Kotlin"
+
+    ```kotlin
+    val powersSchema = MapSchema(StringSchema.INSTANCE, DoubleSchema.INSTANCE)
+    val powersChannel = FlightRecorder.createChannel("Motors/Powers", powersSchema)
+
+    powersChannel.put(mapOf("fl" to 0.8, "fr" to 0.6))
+    ```
+
+=== "Java"
+
+    ```java
+    MapSchema<String, Double> powersSchema =
+        new MapSchema<>(StringSchema.INSTANCE, DoubleSchema.INSTANCE);
+    FlightLogChannel<Map<String, Double>> powersChannel =
+        FlightRecorder.createChannel("Motors/Powers", powersSchema);
+
+    powersChannel.put(Map.of("fl", 0.8, "fr", 0.6));
+    ```
+
+!!! warning "Homogeneous values only"
+    The format is fixed-shape, so every value in a map must share one type. `Map<String, Any>` cannot
+    be logged and is rejected when the schema is built. Entry order is not preserved as meaningful
+    information, and keys must be non-null.
+
 ### EnumSchema<T>
 
 Efficiently serializes enums using ordinal values.
@@ -273,12 +303,16 @@ ReflectedClassSchema automatically:
 1. **Discovers Fields**: Finds all public fields (and properties in Kotlin)
 2. **Creates Schemas**: Recursively creates schemas for field types
 3. **Handles Nested Objects**: Supports arbitrarily nested class structures
-4. **Manages Collections**: Automatically handles Lists, Arrays, etc.
+4. **Manages Collections**: Automatically handles arrays, `List`/`Set`, and `Map` fields, inferring
+   schemas from their declared element/key/value types
 
 !!! warning "Limitations"
     - Only works with public fields
     - Cannot handle private fields without getters
     - May be slower than custom schemas for performance-critical code
+    - Generic fields need concrete type arguments: `Map<String, Any>`, `List<*>` and nullable
+      element types such as `List<String?>` are rejected when the schema is built
+    - Fields must be non-null at write time; the format has no encoding for null
 
 ### TypedClassSchema<T>
 
@@ -779,6 +813,8 @@ Choose the right schema type for your needs:
 |-------------------------------------|----------------------------|----------------------------|
 | Simple values (int, double, string) | Primitive Schemas          | Optimal performance        |
 | Arrays of primitives                | ArraySchema                | Built-in support           |
+| Lists and sets                      | ArraySchema (inferred)     | Same wire format as arrays |
+| Maps with a single value type       | MapSchema                  | Built-in support           |
 | Enums                               | EnumSchema                 | Efficient ordinal encoding |
 | Simple data classes                 | ReflectedClassSchema       | Automatic, no setup        |
 | Polymorphic logging                 | TypedClassSchema (AS_TYPE) | Type information included  |
