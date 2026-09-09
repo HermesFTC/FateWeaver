@@ -97,8 +97,9 @@ open class ReflectedClassSchema<T : Any>(
                 val typeProp = cls.companionObject!!.memberProperties.first { it.name.uppercase() == TypedClassSchema.TYPE_FIELD_NAME } as KProperty1<Any?, *>
                 typeProp.get(cls.companionObjectInstance!!)
             } else if (cls.staticProperties.any { it.name.uppercase() == TypedClassSchema.TYPE_FIELD_NAME }) {
-                val typeProp = cls.staticProperties.first { it.name.uppercase() == TypedClassSchema.TYPE_FIELD_NAME } as KProperty1<Any?, *>
-                typeProp.get(null)
+                // A static property has no receiver, so staticProperties yields KProperty0, not
+                // KProperty1 — reading it takes no argument.
+                cls.staticProperties.first { it.name.uppercase() == TypedClassSchema.TYPE_FIELD_NAME }.get()
             } else null
 
             val owner = cls.qualifiedName ?: cls.java.name

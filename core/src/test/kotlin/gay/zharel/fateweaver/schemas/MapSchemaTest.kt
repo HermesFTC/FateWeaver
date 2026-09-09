@@ -91,8 +91,7 @@ class MapSchemaTest {
     fun testEnumKeyedMap() {
         val keySchema = EnumSchema<Status>(Status::class.java)
         val schema = MapSchema(keySchema, DoubleSchema)
-        // EnumSchema<T> is a FateSchema<Enum<T>>, and Map's key parameter is invariant.
-        val map = mapOf<Enum<Status>, Double>(Status.IDLE to 0.0, Status.RUNNING to 1.0)
+        val map = mapOf(Status.IDLE to 0.0, Status.RUNNING to 1.0)
 
         assertEquals(4 + keySchema.schemaSize + DoubleSchema.schemaSize, schema.schemaSize)
 

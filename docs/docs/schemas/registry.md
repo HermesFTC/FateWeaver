@@ -41,9 +41,9 @@ You can register custom schemas to override the defaults:
     // Define once
     CustomStructSchema<Pose2d> optimizedPoseSchema = new CustomStructSchema<>(
         "Pose2d",
-        List.of("x", "y", "theta"),
-        List.of(DoubleSchema.INSTANCE, DoubleSchema.INSTANCE, DoubleSchema.INSTANCE),
-        pose -> List.of(pose.position.x, pose.position.y, pose.heading.toDouble())
+        Arrays.asList("x", "y", "theta"),
+        Arrays.asList(DoubleSchema.INSTANCE, DoubleSchema.INSTANCE, DoubleSchema.INSTANCE),
+        pose -> Arrays.asList(pose.position.x, pose.position.y, pose.heading.toDouble())
     );
 
     // Register globally

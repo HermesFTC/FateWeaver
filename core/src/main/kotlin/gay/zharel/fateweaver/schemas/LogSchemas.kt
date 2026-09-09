@@ -606,7 +606,10 @@ sealed interface FateSchema<T> {
                     throw IllegalArgumentException(
                         "Cannot infer a FateWeaver schema for the raw class ${cls.name}: map and " +
                                 "collection element types are erased on Class, so they cannot be " +
-                                "recovered here. Infer from a declared property instead, call " +
+                                "recovered here. From Kotlin, write the value through " +
+                                "write(channelName, value) or createChannel<Map<String, Double>>" +
+                                "(channelName), which infer from the static type at the call site. " +
+                                "Otherwise infer from a declared property, call " +
                                 "FateSchema.schemaOfType(typeOf<...>()), or construct the schema " +
                                 "explicitly, e.g. MapSchema(StringSchema, DoubleSchema)."
                     )

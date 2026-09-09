@@ -87,7 +87,7 @@ class TestMapLogRoundTrip {
     fun testEnumKeyedMapRoundTrip() {
         val (_, data) = roundTrip(
             MapSchema(EnumSchema<Status>(Status::class.java), DoubleSchema),
-            listOf(mapOf<Enum<Status>, Double>(Status.IDLE to 0.0, Status.RUNNING to 1.0)),
+            listOf(mapOf(Status.IDLE to 0.0, Status.RUNNING to 1.0)),
         )
 
         // Enum keys come back as constant names, matching how enum values decode elsewhere.

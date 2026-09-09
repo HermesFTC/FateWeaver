@@ -55,8 +55,51 @@ encoded by their own nested schemas. Keys are not restricted to strings.
         new MapSchema<>(StringSchema.INSTANCE, DoubleSchema.INSTANCE);
     FlightLogChannel<Map<String, Double>> powers =
         FlightRecorder.createChannel("Motors/Powers", schema);
-    powers.put(Map.of("fl", 0.8, "fr", 0.6));
+
+    Map<String, Double> sample = new LinkedHashMap<>();
+    sample.put("fl", 0.8);
+    sample.put("fr", 0.6);
+    powers.put(sample);
     ```
+
+## Logging a collection without declaring a channel
+
+`write(channelName, value)` creates a channel on first use. A value's runtime class carries no type
+arguments — a `Map<String, Double>` is just a `LinkedHashMap` at runtime — so from Kotlin this form
+infers from the **static type at the call site**:
+
+=== "Kotlin"
+
+    ```kotlin
+    import gay.zharel.fateweaver.flight.write   // the reified overload is an extension
+
+    FlightRecorder.write("Motors/Powers", mapOf("fl" to 0.8, "fr" to 0.6))
+    FlightRecorder.write("Path/Points", listOf(a, b, c))
+
+    // Or name the type up front:
+    val powers = FlightRecorder.createChannel<Map<String, Double>>("Motors/Powers")
+    ```
+
+=== "Java"
+
+    ```java
+    // Java erases at the call site too, so there is nothing to infer from.
+    // Build the schema explicitly instead:
+    FlightLogChannel<Map<String, Double>> powers = FlightRecorder.createChannel(
+        "Motors/Powers", new MapSchema<>(StringSchema.INSTANCE, DoubleSchema.INSTANCE));
+    powers.put(sample);
+    ```
+
+Two limits follow from this being *static* type information:
+
+- If the static type is `Any` or another type with no arguments, inference falls back to the runtime
+  class, exactly as it did before. `val v: Any = mapOf(...)` therefore still fails — the
+  parameterization is genuinely gone by then.
+- A channel's schema is fixed when the channel is created. Writing `Map<String, Double>` and then
+  `Map<String, Int>` to the same channel name is rejected with an error naming both types.
+
+The same API exists on `FateLogWriter` for non-FTC use, with the extension imported from
+`gay.zharel.fateweaver.log`.
 
 ## Requirements
 

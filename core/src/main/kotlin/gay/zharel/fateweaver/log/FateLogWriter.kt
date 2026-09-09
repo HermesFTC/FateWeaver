@@ -6,6 +6,8 @@ import java.io.FileOutputStream
 import java.io.OutputStream
 import java.nio.ByteBuffer
 import kotlin.reflect.KClass
+import kotlin.reflect.KType
+import kotlin.reflect.typeOf
 
 /** Magic bytes that identify a FateWeaver log file. */
 const val MAGIC = "RR"
@@ -182,6 +184,29 @@ class FateLogWriter(val stream: OutputStream) : AutoCloseable {
         createChannel(name, FateSchema.schemaOfClass(cls.java))
 
     /**
+     * Creates a new log channel whose schema is inferred from the reified type [T], honoring
+     * generic type arguments.
+     *
+     * Unlike the [Class] and [KClass] overloads, this sees the full static type, so parameterized
+     * types work:
+     *
+     * ```kotlin
+     * val powers = writer.createChannel<Map<String, Double>>("Motors/Powers")
+     * powers.put(mapOf("fl" to 0.5))
+     * ```
+     *
+     * @param T The type of objects that will be written to this channel
+     * @param name The unique name for the channel
+     * @return A new [WriterChannel] bound to this writer
+     * @throws IllegalArgumentException if a channel with the same name already exists, or if [T]
+     *   cannot be schematized
+     * @see FateSchema.schemaOfType
+     */
+    @Suppress("UNCHECKED_CAST")
+    inline fun <reified T : Any> createChannel(name: String): WriterChannel<T> =
+        createChannel(name, FateSchema.schemaOfType(typeOf<T>()) as FateSchema<T>)
+
+    /**
      * Writes an object to the specified channel.
      *
      * If the channel is not yet registered with this writer, it will be automatically
@@ -213,12 +238,30 @@ class FateLogWriter(val stream: OutputStream) : AutoCloseable {
     }
 
     /**
-     * Writes an object to a channel identified by name.
+     * The static type a name-addressed channel was created from, for channels created through
+     * [write] with a parameterized type.
+     *
+     * A channel's schema is fixed when the channel is created, so a later write of a differently
+     * parameterized value would silently encode against the wrong schema. Recording the type makes
+     * that mismatch diagnosable. Only parameterized types are recorded — for everything else the
+     * schema comes from the runtime class, which cannot disagree with itself.
+     */
+    private val declaredTypes = mutableMapOf<String, KType>()
+
+    /**
+     * Writes an object to a channel identified by name, inferring the schema from the object's
+     * runtime class.
      *
      * This method provides a dynamic way to write objects when the channel type is not
      * known at compile time. If a channel with the specified name exists, the object
      * is written to that channel. If no such channel exists, a new channel is created
      * automatically using schema inference from the object's class.
+     *
+     * **Kotlin callers should prefer the reified `write` extension**, which additionally recovers
+     * generic type arguments; this overload is what Java sees under the name `write`. A runtime
+     * class carries no type arguments, so a [Map] or [Collection] passed here is rejected — create
+     * the channel with an explicit schema instead, e.g.
+     * `createChannel("k", new MapSchema<>(StringSchema.INSTANCE, DoubleSchema.INSTANCE))`.
      *
      * **Warning**: This method uses type erasure and runtime casting, so type safety
      * is not guaranteed. Use the typed [write] method when possible.
@@ -226,22 +269,77 @@ class FateLogWriter(val stream: OutputStream) : AutoCloseable {
      * @param channelName The name of the channel to write to
      * @param obj The object to write
      */
-    fun write(channelName: String, obj: Any) {
+    @JvmName("write")
+    fun writeErased(channelName: String, obj: Any) = writeResolved(channelName, obj, null)
+
+    /**
+     * Writes an object to a channel identified by name, inferring the schema from the fully
+     * resolved type [type] rather than from [obj]'s erased runtime class.
+     *
+     * This is the entry point behind the reified `write` extension; call it directly when a
+     * [KType] is obtained some other way.
+     *
+     * [type] is only consulted when it actually adds information the runtime class cannot supply,
+     * that is when it has type arguments. A non-parameterized [type] defers to
+     * [FateSchema.schemaOfClass] on `obj.javaClass`, so a value whose static type is a supertype
+     * (`Any`, an interface, `Number`) still gets the concrete schema it gets today.
+     *
+     * @param channelName The name of the channel to write to
+     * @param obj The object to write
+     * @param type The static type of [obj]
+     * @throws IllegalArgumentException if the channel already exists and was created from a
+     *   different parameterized type
+     */
+    fun write(channelName: String, obj: Any, type: KType) =
+        writeResolved(channelName, obj, type.takeIf { it.arguments.isNotEmpty() })
+
+    /**
+     * Shared body of [writeErased] and [write], with [parameterized] already reduced to a type
+     * that carries type arguments, or `null` when the runtime class is the better source.
+     */
+    private fun writeResolved(channelName: String, obj: Any, parameterized: KType?) {
         // Find existing channel by name
         val existingChannel = channels.find { it.name == channelName }
 
         if (existingChannel != null) {
+            checkDeclaredType(channelName, parameterized)
+
             @Suppress("UNCHECKED_CAST")
             write(existingChannel as WriterChannel<Any>, obj)
         } else {
             // Create new channel on-demand
-            val schema = FateSchema.schemaOfClass(obj.javaClass)
-
             @Suppress("UNCHECKED_CAST")
+            val schema = if (parameterized != null) {
+                FateSchema.schemaOfType(parameterized)
+            } else {
+                FateSchema.schemaOfClass(obj.javaClass)
+            } as FateSchema<Any>
+
             val newChannel = WriterChannel(channelName, schema)
             addChannel(newChannel)
+            if (parameterized != null) declaredTypes[channelName] = parameterized
             write(newChannel, obj)
         }
+    }
+
+    /**
+     * Fails if [channelName] was created from a parameterized type that [type] disagrees with.
+     *
+     * Both directions are left alone when either side is unparameterized: a channel created from a
+     * runtime class has no declared type to contradict, and an unparameterized write to a
+     * parameterized channel is either a subtype that encodes fine or a mismatch that the element
+     * schemas will reject loudly on their own.
+     */
+    private fun checkDeclaredType(channelName: String, type: KType?) {
+        val declared = declaredTypes[channelName] ?: return
+        if (type == null || type == declared) return
+
+        throw IllegalArgumentException(
+            "Channel '$channelName' was created for '$declared', but this write passed '$type'. " +
+                    "A channel's schema is fixed when the channel is created, so every write to " +
+                    "'$channelName' must have the same type. Use a different channel name, or " +
+                    "create the channel up front with an explicit schema."
+        )
     }
 
     /**
@@ -357,6 +455,29 @@ class FateLogWriter(val stream: OutputStream) : AutoCloseable {
         }
     }
 }
+
+/**
+ * Writes an object to a channel identified by name, inferring the schema from [T]'s full static
+ * type — type arguments included.
+ *
+ * This is the Kotlin-facing form of [FateLogWriter.writeErased], and the only one that can encode
+ * a parameterized value addressed by channel name:
+ *
+ * ```kotlin
+ * writer.write("Motors/Powers", mapOf("fl" to 0.5))   // Map<String, Double>
+ * writer.write("Path/Points", listOf(a, b, c))        // List<Pose>
+ * ```
+ *
+ * It is an extension rather than a member for two reasons, both forced by the JVM: an inline
+ * reified member would erase to `write(String, Object)` and clash with
+ * [FateLogWriter.writeErased]'s signature, and a member of that name would win overload resolution
+ * against this one at every call site, so the reified path would never run.
+ *
+ * @see FateLogWriter.write
+ */
+@JvmSynthetic
+inline fun <reified T : Any> FateLogWriter.write(channelName: String, obj: T) =
+    write(channelName, obj, typeOf<T>())
 
 /**
  * Extension function to write a [ByteBuffer] to an [OutputStream].

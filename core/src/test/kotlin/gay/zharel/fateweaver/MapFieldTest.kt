@@ -3,6 +3,7 @@ package gay.zharel.fateweaver
 import gay.zharel.fateweaver.log.FateLogEntry
 import gay.zharel.fateweaver.log.FateLogReader
 import gay.zharel.fateweaver.log.FateLogWriter
+import gay.zharel.fateweaver.log.write
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue

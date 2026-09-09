@@ -57,7 +57,7 @@ import java.nio.ByteBuffer
 class MapSchema<K : Any, V : Any>(
     val keySchema: FateSchema<K>,
     val valueSchema: FateSchema<V>,
-) : FateSchema<Map<K, V>> {
+) : FateSchema<@JvmSuppressWildcards Map<K, V>> {
     override val tag: Int = FateSchema.TypeRegistry.MAP.value
 
     override val schemaSize: Int = Int.SIZE_BYTES + keySchema.schemaSize + valueSchema.schemaSize

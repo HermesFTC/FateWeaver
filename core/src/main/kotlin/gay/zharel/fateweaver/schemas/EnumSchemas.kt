@@ -2,7 +2,13 @@ package gay.zharel.fateweaver.schemas
 
 import java.nio.ByteBuffer
 
-class EnumSchema<T : Enum<T>>(val enumClass: Class<out Enum<T>>) : FateSchema<Enum<T>> {
+/**
+ * A schema for enum constants, encoded as their 4-byte ordinal.
+ *
+ * The value type is [T] itself rather than `Enum<T>`, so a channel built from this schema is a
+ * `LogChannel<MyEnum>` and composes naturally as a map key or array element type.
+ */
+class EnumSchema<T : Enum<T>>(val enumClass: Class<out Enum<T>>) : FateSchema<T> {
     init {
         require(enumClass.isEnum) { "Class must be an enum" }
     }
@@ -26,9 +32,9 @@ class EnumSchema<T : Enum<T>>(val enumClass: Class<out Enum<T>>) : FateSchema<En
         buffer.array()
     }
 
-    override fun objSize(obj: Enum<T>): Int = Int.SIZE_BYTES
+    override fun objSize(obj: T): Int = Int.SIZE_BYTES
 
-    override fun encodeObject(buffer: ByteBuffer, obj: Enum<T>) {
+    override fun encodeObject(buffer: ByteBuffer, obj: T) {
         buffer.putInt(obj.ordinal)
     }
 }

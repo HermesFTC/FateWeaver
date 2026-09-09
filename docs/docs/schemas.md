@@ -212,7 +212,10 @@ Handles maps with an entry count prefix. Keys are not restricted to strings — 
     FlightLogChannel<Map<String, Double>> powersChannel =
         FlightRecorder.createChannel("Motors/Powers", powersSchema);
 
-    powersChannel.put(Map.of("fl", 0.8, "fr", 0.6));
+    Map<String, Double> powers = new LinkedHashMap<>();
+    powers.put("fl", 0.8);
+    powers.put("fr", 0.6);
+    powersChannel.put(powers);
     ```
 
 !!! warning "Homogeneous values only"
@@ -397,9 +400,9 @@ Provides complete control over serialization with custom encoding functions.
 
     CustomStructSchema<Pose2d> customPoseSchema = new CustomStructSchema<>(
         "Pose2d",
-        List.of("x", "y", "heading"),
-        List.of(DoubleSchema.INSTANCE, DoubleSchema.INSTANCE, DoubleSchema.INSTANCE),
-        pose -> List.of(pose.x, pose.y, pose.heading)
+        Arrays.asList("x", "y", "heading"),
+        Arrays.asList(DoubleSchema.INSTANCE, DoubleSchema.INSTANCE, DoubleSchema.INSTANCE),
+        pose -> Arrays.asList(pose.x, pose.y, pose.heading)
     );
 
     FlightLogChannel<Pose2d> poseChannel =
@@ -427,9 +430,9 @@ Provides complete control over serialization with custom encoding functions.
     // Convert units during serialization
     CustomStructSchema<Double> distanceSchema = new CustomStructSchema<>(
         "Distance",
-        List.of("meters"),
-        List.of(DoubleSchema.INSTANCE),
-        inches -> List.of(inches * 0.0254)  // Convert inches to meters
+        Arrays.asList("meters"),
+        Arrays.asList(DoubleSchema.INSTANCE),
+        inches -> Arrays.asList(inches * 0.0254)  // Convert inches to meters
     );
     ```
 
@@ -459,9 +462,9 @@ Provides complete control over serialization with custom encoding functions.
     ```java
     CustomStructSchema<ComplexObject> selectiveSchema = new CustomStructSchema<>(
         "ImportantData",
-        List.of("data", "time"),
-        List.of(DoubleSchema.INSTANCE, LongSchema.INSTANCE),
-        obj -> List.of(obj.importantData, obj.timestamp)  // Only log important fields
+        Arrays.asList("data", "time"),
+        Arrays.asList(DoubleSchema.INSTANCE, LongSchema.INSTANCE),
+        obj -> Arrays.asList(obj.importantData, obj.timestamp)  // Only log important fields
     );
     ```
 
@@ -731,9 +734,9 @@ You can register custom schemas to override the defaults:
     // Define once
     CustomStructSchema<Pose2d> optimizedPoseSchema = new CustomStructSchema<>(
         "Pose2d",
-        List.of("x", "y", "theta"),
-        List.of(DoubleSchema.INSTANCE, DoubleSchema.INSTANCE, DoubleSchema.INSTANCE),
-        pose -> List.of(pose.position.x, pose.position.y, pose.heading.toDouble())
+        Arrays.asList("x", "y", "theta"),
+        Arrays.asList(DoubleSchema.INSTANCE, DoubleSchema.INSTANCE, DoubleSchema.INSTANCE),
+        pose -> Arrays.asList(pose.position.x, pose.position.y, pose.heading.toDouble())
     );
 
     // Register globally

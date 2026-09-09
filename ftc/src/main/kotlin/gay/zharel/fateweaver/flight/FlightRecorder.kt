@@ -18,6 +18,8 @@ import org.firstinspires.ftc.robotcore.external.Func
 import org.firstinspires.ftc.robotcore.external.Telemetry
 import kotlin.collections.sortBy
 import kotlin.collections.sumOf
+import kotlin.reflect.KType
+import kotlin.reflect.typeOf
 import kotlin.run
 
 object FlightRecorder : OpModeManagerNotifier.Notifications, Telemetry {
@@ -66,17 +68,17 @@ object FlightRecorder : OpModeManagerNotifier.Notifications, Telemetry {
             writer = FateLogManager.start(opModeManager.activeOpModeName)
             timestampChannel = createChannel("TIMESTAMP", LongSchema)
 
-            write("OPMODE_PRE_INIT", System.nanoTime())
+            writeErased("OPMODE_PRE_INIT", System.nanoTime())
         }
     }
 
     override fun onOpModePreStart(opMode: OpMode?) {
-        write("OPMODE_PRE_START", System.nanoTime())
+        writeErased("OPMODE_PRE_START", System.nanoTime())
     }
 
     override fun onOpModePostStop(opMode: OpMode?) {
         synchronized(this) {
-            write("OPMODE_POST_STOP", System.nanoTime())
+            writeErased("OPMODE_POST_STOP", System.nanoTime())
 
             writer?.close()
             writer = null
@@ -85,10 +87,37 @@ object FlightRecorder : OpModeManagerNotifier.Notifications, Telemetry {
         }
     }
 
+    /**
+     * Writes an object to a channel identified by name, inferring the schema from the object's
+     * runtime class.
+     *
+     * **Kotlin callers should prefer the reified [write] extension**, which additionally recovers
+     * generic type arguments; this overload is what Java sees under the name `write`. A runtime
+     * class carries no type arguments, so a [Map] or [Collection] passed here is rejected — create
+     * the channel with an explicit schema instead, e.g.
+     * `createChannel("k", new MapSchema<>(StringSchema.INSTANCE, DoubleSchema.INSTANCE))`.
+     */
     @JvmStatic
-    fun write(channelName: String, obj: Any) {
+    @JvmName("write")
+    fun writeErased(channelName: String, obj: Any) {
         synchronized(this) {
-            writer?.write(channelName, obj)
+            writer?.writeErased(channelName, obj)
+        }
+    }
+
+    /**
+     * Writes an object to a channel identified by name, inferring the schema from the fully
+     * resolved type [type] rather than from [obj]'s erased runtime class.
+     *
+     * This is the entry point behind the reified [write] extension; call it directly when a
+     * [KType] is obtained some other way.
+     *
+     * @see gay.zharel.fateweaver.log.FateLogWriter.write
+     */
+    @JvmStatic
+    fun write(channelName: String, obj: Any, type: KType) {
+        synchronized(this) {
+            writer?.write(channelName, obj, type)
         }
     }
 
@@ -115,6 +144,19 @@ object FlightRecorder : OpModeManagerNotifier.Notifications, Telemetry {
     fun <T : Any> createChannel(name: String, cls: Class<T>): FlightLogChannel<T> {
         return createChannel(name, FateSchema.schemaOfClass(cls))
     }
+
+    /**
+     * Creates a new log channel attached to the current OpMode's writer, with a schema inferred
+     * from the reified type [T] — type arguments included.
+     *
+     * ```kotlin
+     * val powers = FlightRecorder.createChannel<Map<String, Double>>("Motors/Powers")
+     * powers.put(mapOf("fl" to 0.5))
+     * ```
+     */
+    @Suppress("UNCHECKED_CAST")
+    inline fun <reified T : Any> createChannel(name: String): FlightLogChannel<T> =
+        createChannel(name, FateSchema.schemaOfType(typeOf<T>()) as FateSchema<T>)
 
     /**
      * Adds a timestamp to the log if the timestamp channel is available.
@@ -255,3 +297,26 @@ object FlightRecorder : OpModeManagerNotifier.Notifications, Telemetry {
         throw UnsupportedOperationException("$methodName is not supported by FlightRecorder")
     }
 }
+
+/**
+ * Writes an object to a channel identified by name, inferring the schema from [T]'s full static
+ * type — type arguments included.
+ *
+ * This is the Kotlin-facing form of [FlightRecorder.writeErased], and the only one that can encode
+ * a parameterized value addressed by channel name:
+ *
+ * ```kotlin
+ * FlightRecorder.write("Motors/Powers", mapOf("fl" to 0.5))   // Map<String, Double>
+ * FlightRecorder.write("Path/Points", listOf(a, b, c))        // List<Pose>
+ * ```
+ *
+ * It is an extension rather than a member for two reasons, both forced by the JVM: an inline
+ * reified member would erase to `write(String, Object)` and clash with
+ * [FlightRecorder.writeErased]'s signature, and a member of that name would win overload
+ * resolution against this one at every call site, so the reified path would never run.
+ *
+ * @see FlightRecorder.write
+ */
+@JvmSynthetic
+inline fun <reified T : Any> FlightRecorder.write(channelName: String, obj: T) =
+    write(channelName, obj, typeOf<T>())
