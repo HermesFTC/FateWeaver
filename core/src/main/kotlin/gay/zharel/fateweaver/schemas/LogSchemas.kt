@@ -8,51 +8,49 @@ import kotlin.reflect.KTypeParameter
 import kotlin.reflect.full.isSubclassOf
 
 /**
- * Core interface for defining serialization schemas in the FateWeaver logging system.
+ * Describes how one type becomes bytes.
  *
- * FateSchema provides a type-safe, efficient binary serialization framework with the following features:
- * - **Type Safety**: Each schema is parameterized with the specific type it can serialize
- * - **Self-Describing**: Schemas embed their own structure information for compatibility
- * - **Efficient Encoding**: Optimized binary format with minimal overhead
- * - **Schema Evolution**: Version-aware serialization for backward compatibility
- * - **Extensible**: Support for primitive types, collections, enums, and custom classes
+ * A schema is parameterized by the type it encodes, so the compiler catches a value that doesn't
+ * belong on a channel. Every schema can also write a description of itself, and that description
+ * goes into the log ahead of the data, which is what lets a reader decode a file without the
+ * classes that wrote it.
  *
- * ## Schema Types
+ * ## The schemas
  *
- * The system supports several categories of schemas:
- *
- * ### Primitive Schemas
+ * ### Primitives
  * - `IntSchema`: 32-bit signed integers
  * - `LongSchema`: 64-bit signed integers
  * - `DoubleSchema`: 64-bit floating point numbers
  * - `StringSchema`: UTF-8 encoded strings with length prefix
  * - `BooleanSchema`: Single-byte boolean values
  *
- * ### Collection Schemas
- * - `ArraySchema<T>`: Arrays of any supported type T
- * - `MapSchema<K, V>`: Maps with independently typed keys and values
- * - `EnumSchema<T>`: Enumeration types with ordinal encoding
+ * There is no float type. `Float` widens to `DoubleSchema`, which is exact. Narrower primitives
+ * (`Short`, `Byte`, `Char`) have no encoding and are rejected when the schema is built.
  *
- * ### Class Schemas
- * - `ReflectedClassSchema<T>`: Automatic serialization via reflection
- * - `TypedClassSchema<T>`: Reflection-based with embedded type information
- * - `CustomStructSchema<T>`: User-defined serialization with custom encoders
+ * ### Collections
+ * - `ArraySchema<T>`: arrays, and the wire format `List`/`Set` use too
+ * - `DoubleArraySchema` and friends: Kotlin's primitive arrays, same bytes without boxing
+ * - `MapSchema<K, V>`: maps with independently typed keys and values
+ * - `EnumSchema<T>`: enums, as a 4-byte ordinal
  *
- * ## Binary Format
+ * ### Classes
+ * - `ReflectedClassSchema<T>`: built by reflecting over public properties
+ * - `TypedClassSchema<T>`: the same, plus the class's `AS_TYPE` name in the log
+ * - `CustomStructSchema<T>`: components and an encoder you write yourself
  *
- * Each schema defines both its metadata format and object encoding format:
+ * ## Binary format
  *
- * **Schema Encoding** (written once per channel):
+ * The schema, written once per channel:
  * ```
  * [4 bytes: tag] [schema-specific metadata...]
  * ```
  *
- * **Object Encoding** (written for each logged object):
+ * An object, written once per logged value:
  * ```
  * [variable: object data as defined by schema]
  * ```
  *
- * ## Usage Example
+ * ## Example
  *
  * ```kotlin
  * // Automatic schema inference
@@ -91,30 +89,23 @@ sealed interface FateSchema<T> {
     /**
      * Number of bytes required to encode this schema's metadata.
      *
-     * This represents the size of the schema definition itself (not the objects it describes).
-     * For primitive types, this is typically just 4 bytes (the tag). For complex types
-     * like classes or arrays, this includes additional metadata such as field definitions,
-     * element schemas, etc.
+     * This is the size of the schema definition, not of the objects it describes. A primitive is
+     * just its 4-byte tag; a class or array adds field definitions and nested element schemas.
      *
-     * The schema size must be consistent for the same schema configuration and is used
-     * to allocate appropriate buffer space during encoding.
+     * It must stay the same for a given schema, since the writer allocates against it.
      */
     val schemaSize: Int
 
     /**
      * The complete schema definition as a byte array.
      *
-     * This property provides the binary representation of the schema metadata that gets
-     * written to log files.
-     * The format always begins with the [tag] followed by any
-     * schema-specific metadata.
+     * This is what gets written into the log file. It always starts with the [tag], followed by
+     * whatever metadata the schema needs.
      *
-     * **Default Implementation**: For simple schemas, this just encodes the tag as a
-     * 4-byte integer.
-     * Complex schemas override this to include additional metadata
-     * such as field definitions, element types, etc.
+     * The default just encodes the tag. Anything with structure overrides it to add field
+     * definitions, element types and so on.
      *
-     * **Format**:
+     * Format:
      * ```
      * [4 bytes: tag] [variable: schema-specific metadata]
      * ```
@@ -129,13 +120,10 @@ sealed interface FateSchema<T> {
     /**
      * Encodes this schema's metadata into the provided buffer.
      *
-     * This method writes the complete schema definition to the buffer, starting with
-     * the [tag] and followed by any schema-specific metadata.
-     * The amount of data
-     * written must exactly match [schemaSize].
+     * Writes the whole schema definition, starting with the [tag]. The number of bytes written
+     * must match [schemaSize] exactly.
      *
-     * **Default Implementation**: Writes the [schema] property directly to the buffer.
-     * This is suitable for most use cases but can be overridden for custom encoding logic.
+     * The default writes the [schema] property straight to the buffer.
      *
      * @param buffer The buffer to write schema data to. Must have at least [schemaSize] bytes remaining.
      * @throws java.nio.BufferOverflowException if the buffer doesn't have enough space
@@ -147,15 +135,10 @@ sealed interface FateSchema<T> {
     /**
      * Calculates the number of bytes required to encode the given object.
      *
-     * This method analyzes the object and returns the exact number of bytes needed
-     * for its binary representation.
-     * The size calculation must be deterministic and
-     * consistent with the actual encoding performed by [encodeObject].
+     * Must be exact, deterministic, and consistent with what [encodeObject] actually writes.
      *
-     * **Performance Note**: For variable-length data (strings, arrays, nested objects),
-     * this may need to traverse the entire object structure.
-     * Consider caching results
-     * if the same object will be encoded multiple times.
+     * For variable-length data (strings, arrays, nested objects) this walks the whole structure,
+     * and the writer calls it once per logged value on top of [encodeObject].
      *
      * @param obj The object to calculate the encoded size for
      * @return The number of bytes required to encode this object
@@ -165,15 +148,10 @@ sealed interface FateSchema<T> {
     /**
      * Encodes the given object into the provided buffer.
      *
-     * This method writes the binary representation of the object to the buffer using
-     * the format defined by this schema. The amount of data written must exactly
-     * match the value returned by [objSize] for the same object.
+     * Writes exactly as many bytes as [objSize] reported for the same object, and advances the
+     * buffer's position by that much. The buffer needs at least that much room remaining.
      *
-     * **Buffer Requirements**: The buffer must have at least `objSize(obj)` bytes
-     * of remaining capacity. The buffer's position will be advanced by exactly
-     * that number of bytes.
-     *
-     * **Encoding Format**: The specific binary format depends on the schema type:
+     * The layout depends on the schema:
      * - Primitives: Direct binary representation (int, long, double, etc.)
      * - Strings: Length prefix (4 bytes) + UTF-8 encoded bytes
      * - Booleans: Single byte (0x00 for false, 0x01 for true)
@@ -189,11 +167,9 @@ sealed interface FateSchema<T> {
     /**
      * Registry of all supported schema types with their unique tag values.
      *
-     * This enum defines the complete set of schema types supported by the FateWeaver
-     * format. Each entry has a unique integer value that serves as the schema's tag
-     * in the binary format.
+     * Every schema type FateWeaver knows, each with the integer tag it writes into the log.
      *
-     * **Stability**: These tag values are part of the file format specification and
+     * These values are part of the file format and
      * must remain stable across versions to ensure backward compatibility.
      *
      * @param value The unique integer tag for this schema type
@@ -255,48 +231,42 @@ sealed interface FateSchema<T> {
         /**
          * Automatically creates an appropriate schema for the given class type.
          *
-         * This factory method uses reflection and type inspection to determine the most
-         * suitable schema for a given Java class. It handles the complete type system
-         * including primitives, collections, enums, and custom classes.
+         * Inspects the class and picks the schema that fits it.
          *
-         * ## Supported Types
+         * ## Supported types
          *
-         * **Primitive Types**:
+         * ### Primitives
          * - `int/Integer` → [IntSchema]
          * - `long/Long` → [LongSchema]
          * - `double/Double` → [DoubleSchema]
          * - `boolean/Boolean` → [BooleanSchema]
          * - `String` → [StringSchema]
          *
-         * **Collection Types**:
-         * - `T[]` → [ArraySchema]<T> (recursive schema inference for element type)
+         * ### Collections
+         * - `T[]` → [ArraySchema]<T>, inferring the element schema recursively
          * - `Enum<T>` → [EnumSchema]<T>
          *
-         * **Generic Types**:
+         * ### Generics
          *
-         * A [Class] carries no type arguments, so `Map` and `Collection` types cannot be inferred
-         * here and are rejected. Use [schemaOfType] when a [kotlin.reflect.KType] is available
-         * (this is what reflected class *fields* go through), or construct the schema explicitly,
-         * e.g. `MapSchema(StringSchema, DoubleSchema)`.
+         * A [Class] carries no type arguments, so `Map` and `Collection` are rejected here. Use
+         * [schemaOfType] when you have a [kotlin.reflect.KType] (which is what reflected class
+         * *fields* go through), or build the schema yourself, e.g.
+         * `MapSchema(StringSchema, DoubleSchema)`.
          *
-         * **Class Types**:
-         * - Classes with companion object `as_type` property → [TypedClassSchema]
-         * - All other classes → [ReflectedClassSchema]
+         * ### Classes
+         * - An `AS_TYPE` constant, on a companion object or as a Java static → [TypedClassSchema]
+         * - Anything else → [ReflectedClassSchema]
          *
-         * ## Type Safety
+         * The casts inside are unchecked, but the returned schema always matches the class passed
+         * in.
          *
-         * The method uses unchecked casts internally but maintains type safety through
-         * careful type checking. The returned schema is guaranteed to be compatible
-         * with the input class type.
+         * ## Cost
          *
-         * ## Performance Considerations
+         * Primitives map in constant time. Enums and arrays need class introspection, and a class
+         * schema means reflecting over every field, so results are cached per class in the
+         * registry and the cost is paid once.
          *
-         * - Primitive type mapping is constant-time
-         * - Enum and array detection uses class introspection
-         * - Class schema creation involves reflection and field analysis
-         * - Consider caching schemas for frequently used types
-         *
-         * ## Usage Examples
+         * ## Examples
          *
          * ```kotlin
          * // Primitive types
@@ -332,48 +302,42 @@ sealed interface FateSchema<T> {
         /**
          * Automatically creates an appropriate schema for the given class type.
          *
-         * This factory method uses reflection and type inspection to determine the most
-         * suitable schema for a given Java class. It handles the complete type system
-         * including primitives, collections, enums, and custom classes.
+         * Inspects the class and picks the schema that fits it.
          *
-         * ## Supported Types
+         * ## Supported types
          *
-         * **Primitive Types**:
+         * ### Primitives
          * - `int/Integer` → [IntSchema]
          * - `long/Long` → [LongSchema]
          * - `double/Double` → [DoubleSchema]
          * - `boolean/Boolean` → [BooleanSchema]
          * - `String` → [StringSchema]
          *
-         * **Collection Types**:
-         * - `T[]` → [ArraySchema]<T> (recursive schema inference for element type)
+         * ### Collections
+         * - `T[]` → [ArraySchema]<T>, inferring the element schema recursively
          * - `Enum<T>` → [EnumSchema]<T>
          *
-         * **Generic Types**:
+         * ### Generics
          *
-         * A [Class] carries no type arguments, so `Map` and `Collection` types cannot be inferred
-         * here and are rejected. Use [schemaOfType] when a [kotlin.reflect.KType] is available
-         * (this is what reflected class *fields* go through), or construct the schema explicitly,
-         * e.g. `MapSchema(StringSchema, DoubleSchema)`.
+         * A [Class] carries no type arguments, so `Map` and `Collection` are rejected here. Use
+         * [schemaOfType] when you have a [kotlin.reflect.KType] (which is what reflected class
+         * *fields* go through), or build the schema yourself, e.g.
+         * `MapSchema(StringSchema, DoubleSchema)`.
          *
-         * **Class Types**:
-         * - Classes with companion object `as_type` property → [TypedClassSchema]
-         * - All other classes → [ReflectedClassSchema]
+         * ### Classes
+         * - An `AS_TYPE` constant, on a companion object or as a Java static → [TypedClassSchema]
+         * - Anything else → [ReflectedClassSchema]
          *
-         * ## Type Safety
+         * The casts inside are unchecked, but the returned schema always matches the class passed
+         * in.
          *
-         * The method uses unchecked casts internally but maintains type safety through
-         * careful type checking. The returned schema is guaranteed to be compatible
-         * with the input class type.
+         * ## Cost
          *
-         * ## Performance Considerations
+         * Primitives map in constant time. Enums and arrays need class introspection, and a class
+         * schema means reflecting over every field, so results are cached per class in the
+         * registry and the cost is paid once.
          *
-         * - Primitive type mapping is constant-time
-         * - Enum and array detection uses class introspection
-         * - Class schema creation involves reflection and field analysis
-         * - Consider caching schemas for frequently used types
-         *
-         * ## Usage Examples
+         * ## Examples
          *
          * ```kotlin
          * // Primitive types
@@ -467,7 +431,7 @@ sealed interface FateSchema<T> {
          * @param type The type to build a schema for
          * @return A schema capable of serializing values of [type]
          * @throws IllegalArgumentException if [type], or any of its type arguments, cannot be
-         *   schematized — star projections, type variables, `Any`, and nullable type arguments are
+         *   schematized. Star projections, type variables, `Any`, and nullable type arguments are
          *   all rejected.
          */
         @JvmStatic
@@ -586,6 +550,20 @@ sealed interface FateSchema<T> {
             parameterizedRegistry.clear()
         }
 
+        /**
+         * JVM primitives the format cannot encode, mapped to the type to widen to.
+         *
+         * Without this guard they fall through to [ReflectedClassSchema], which finds no public
+         * properties on a boxed primitive and encodes zero bytes. The write succeeds and the value
+         * is silently missing from the log, which is the worst way to lose data. Their arrays are
+         * covered too: `short[]` resolves its component type through here first.
+         */
+        private val UNSUPPORTED_PRIMITIVES: Map<Class<*>, String> = mapOf(
+            Short::class.java to "Int", java.lang.Short::class.java to "Int",
+            Byte::class.java to "Int", java.lang.Byte::class.java to "Int",
+            Char::class.java to "String or Int", Character::class.java to "String or Int",
+        )
+
         @Suppress("UNCHECKED_CAST")
         private fun <T : Any> createSchemaForClass(cls: Class<T>) = when (cls) {
             Int::class.java, Integer::class.java -> IntSchema
@@ -593,6 +571,13 @@ sealed interface FateSchema<T> {
             Double::class.java, java.lang.Double::class.java -> DoubleSchema
             String::class.java -> StringSchema
             Boolean::class.java, java.lang.Boolean::class.java -> BooleanSchema
+            Float::class.java, java.lang.Float::class.java ->
+                TranslatedSchema<Float, Double>(DoubleSchema) { it.toDouble() }
+            DoubleArray::class.java -> DoubleArraySchema
+            IntArray::class.java -> IntArraySchema
+            LongArray::class.java -> LongArraySchema
+            BooleanArray::class.java -> BooleanArraySchema
+            FloatArray::class.java -> FloatArraySchema
             else -> {
                 if (cls.isEnum) {
                     EnumSchema(cls as Class<out Enum<*>>)
@@ -612,6 +597,13 @@ sealed interface FateSchema<T> {
                                 "Otherwise infer from a declared property, call " +
                                 "FateSchema.schemaOfType(typeOf<...>()), or construct the schema " +
                                 "explicitly, e.g. MapSchema(StringSchema, DoubleSchema)."
+                    )
+                } else if (cls in UNSUPPORTED_PRIMITIVES) {
+                    throw IllegalArgumentException(
+                        "Cannot infer a FateWeaver schema for ${cls.name}: the format has no " +
+                                "encoding for it. Widen the field to ${UNSUPPORTED_PRIMITIVES[cls]}, " +
+                                "or register a schema for the declaring class with " +
+                                "FateSchema.registerSchema(...)."
                     )
                 } else {
                     ReflectedClassSchema.createFromClass(cls)

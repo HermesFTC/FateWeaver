@@ -16,11 +16,10 @@ const val MAGIC = "RR"
 const val VERSION: Short = 1
 
 /**
- * A log channel represents a named stream of typed data within a FateWeaver log.
+ * A named stream of typed data within a FateWeaver log.
  *
- * Each channel has a unique name and is associated with a specific schema that defines
- * how objects of type [T] are serialized. Channels provide a way to organize and
- * separate different types of log data within the same log file.
+ * A channel's name is unique within its log, and its [schema] fixes how values of type [T] are
+ * encoded. Use one channel per thing you want to plot.
  *
  * @param T The type of objects that can be written to this channel
  */
@@ -40,24 +39,20 @@ interface LogChannel<T> {
 }
 
 /**
- * A writer for FateWeaver log files that supports multiple typed channels.
+ * A writer for FateWeaver log files, holding any number of typed channels.
  *
- * FateLogWriter provides a high-performance binary logging format with the following features:
- * - **Type Safety**: Each channel is strongly typed with compile-time guarantees
- * - **Schema Evolution**: Schemas are embedded in the log file for compatibility
- * - **Multiple Channels**: Different data types can be logged to separate named channels
- * - **Efficient Encoding**: Binary format optimized for size and speed
- * - **Auto-Schema Detection**: Can automatically infer schemas from class types
+ * Each channel is typed, so the compiler catches a value that doesn't match its schema. Schemas are
+ * written into the log itself, which is what lets a reader decode the file with no access to the
+ * classes that produced it. Most types need no schema of their own: hand [createChannel] a class
+ * and it infers one.
  *
- * ## File Format
+ * ## File format
  *
- * Each log file begins with a header containing magic bytes and version information,
- * followed by a series of entries. There are two types of entries:
+ * A 4-byte header of magic bytes and a version, then a run of entries. An entry is either a schema
+ * entry (type 0) defining a channel, or a message entry (type 1) carrying one value for a channel
+ * already defined.
  *
- * 1. **Schema Entries** (type 0): Define the structure of a channel
- * 2. **Message Entries** (type 1): Contain the actual logged data
- *
- * ## Usage Example
+ * ## Example
  *
  * ```kotlin
  * // Create a log writer
@@ -184,11 +179,11 @@ class FateLogWriter(val stream: OutputStream) : AutoCloseable {
         createChannel(name, FateSchema.schemaOfClass(cls.java))
 
     /**
-     * Creates a new log channel whose schema is inferred from the reified type [T], honoring
-     * generic type arguments.
+     * Creates a new log channel whose schema is inferred from the reified type [T], including
+     * type arguments.
      *
-     * Unlike the [Class] and [KClass] overloads, this sees the full static type, so parameterized
-     * types work:
+     * This overload should be preferred over the [createChannel] overload that takes a [KClass]
+     * because type arguments are preserved:
      *
      * ```kotlin
      * val powers = writer.createChannel<Map<String, Double>>("Motors/Powers")
@@ -238,13 +233,13 @@ class FateLogWriter(val stream: OutputStream) : AutoCloseable {
     }
 
     /**
-     * The static type a name-addressed channel was created from, for channels created through
-     * [write] with a parameterized type.
+     * The static type each name-addressed channel was created from, for channels that [write]
+     * built from a parameterized type.
      *
-     * A channel's schema is fixed when the channel is created, so a later write of a differently
-     * parameterized value would silently encode against the wrong schema. Recording the type makes
-     * that mismatch diagnosable. Only parameterized types are recorded — for everything else the
-     * schema comes from the runtime class, which cannot disagree with itself.
+     * A channel's schema is fixed at creation, so writing a differently parameterized value later
+     * would encode against the wrong schema without saying so. Keeping the type around turns that
+     * into an error naming both types. Only parameterized types go in here. Everything else takes
+     * its schema from the runtime class, which cannot disagree with itself.
      */
     private val declaredTypes = mutableMapOf<String, KType>()
 
@@ -252,19 +247,17 @@ class FateLogWriter(val stream: OutputStream) : AutoCloseable {
      * Writes an object to a channel identified by name, inferring the schema from the object's
      * runtime class.
      *
-     * This method provides a dynamic way to write objects when the channel type is not
-     * known at compile time. If a channel with the specified name exists, the object
-     * is written to that channel. If no such channel exists, a new channel is created
-     * automatically using schema inference from the object's class.
+     * Use this when the channel type isn't known at compile time. Writes to the named channel if it
+     * exists, otherwise creates one from the object's class first.
      *
-     * **Kotlin callers should prefer the reified `write` extension**, which additionally recovers
-     * generic type arguments; this overload is what Java sees under the name `write`. A runtime
-     * class carries no type arguments, so a [Map] or [Collection] passed here is rejected — create
-     * the channel with an explicit schema instead, e.g.
+     * Java sees this as `write`. Kotlin callers should reach for the reified `write` extension
+     * instead, which also recovers type arguments. A runtime class has no type arguments, so a [Map]
+     * or [Collection] passed here is rejected. Create the channel with an explicit schema instead:
      * `createChannel("k", new MapSchema<>(StringSchema.INSTANCE, DoubleSchema.INSTANCE))`.
      *
-     * **Warning**: This method uses type erasure and runtime casting, so type safety
-     * is not guaranteed. Use the typed [write] method when possible.
+     * The cast to the existing channel's type is unchecked, so writing the wrong type to an
+     * established channel fails at encode time rather than compile time. Prefer the typed [write]
+     * where you can.
      *
      * @param channelName The name of the channel to write to
      * @param obj The object to write
@@ -276,13 +269,13 @@ class FateLogWriter(val stream: OutputStream) : AutoCloseable {
      * Writes an object to a channel identified by name, inferring the schema from the fully
      * resolved type [type] rather than from [obj]'s erased runtime class.
      *
-     * This is the entry point behind the reified `write` extension; call it directly when a
-     * [KType] is obtained some other way.
+     * This is what the reified `write` extension calls. Call it directly if you got a [KType] some
+     * other way.
      *
-     * [type] is only consulted when it actually adds information the runtime class cannot supply,
-     * that is when it has type arguments. A non-parameterized [type] defers to
-     * [FateSchema.schemaOfClass] on `obj.javaClass`, so a value whose static type is a supertype
-     * (`Any`, an interface, `Number`) still gets the concrete schema it gets today.
+     * [type] only matters when it has type arguments, since that is the only thing the runtime
+     * class can't supply. Without them this falls through to [FateSchema.schemaOfClass] on
+     * `obj.javaClass`, so a value whose static type is a supertype (`Any`, `Number`, an interface)
+     * keeps getting the concrete schema it always did.
      *
      * @param channelName The name of the channel to write to
      * @param obj The object to write
@@ -294,8 +287,8 @@ class FateLogWriter(val stream: OutputStream) : AutoCloseable {
         writeResolved(channelName, obj, type.takeIf { it.arguments.isNotEmpty() })
 
     /**
-     * Shared body of [writeErased] and [write], with [parameterized] already reduced to a type
-     * that carries type arguments, or `null` when the runtime class is the better source.
+     * Shared body of [writeErased] and [write]. By this point [parameterized] is either a type with
+     * type arguments or `null`, meaning the runtime class is the better source.
      */
     private fun writeResolved(channelName: String, obj: Any, parameterized: KType?) {
         // Find existing channel by name
@@ -325,10 +318,9 @@ class FateLogWriter(val stream: OutputStream) : AutoCloseable {
     /**
      * Fails if [channelName] was created from a parameterized type that [type] disagrees with.
      *
-     * Both directions are left alone when either side is unparameterized: a channel created from a
-     * runtime class has no declared type to contradict, and an unparameterized write to a
-     * parameterized channel is either a subtype that encodes fine or a mismatch that the element
-     * schemas will reject loudly on their own.
+     * When either side is unparameterized this does nothing. A channel built from a runtime class
+     * has no recorded type to contradict, and an unparameterized write to a parameterized channel
+     * is either a subtype that encodes fine or a mismatch the element schemas will throw on anyway.
      */
     private fun checkDeclaredType(channelName: String, type: KType?) {
         val declared = declaredTypes[channelName] ?: return
@@ -457,21 +449,21 @@ class FateLogWriter(val stream: OutputStream) : AutoCloseable {
 }
 
 /**
- * Writes an object to a channel identified by name, inferring the schema from [T]'s full static
- * type — type arguments included.
+ * Writes an object to a channel identified by name, inferring the schema from [T]'s static type,
+ * type arguments included.
  *
- * This is the Kotlin-facing form of [FateLogWriter.writeErased], and the only one that can encode
- * a parameterized value addressed by channel name:
+ * This is the Kotlin form of [FateLogWriter.writeErased], and the only way to write a parameterized
+ * value by channel name:
  *
  * ```kotlin
  * writer.write("Motors/Powers", mapOf("fl" to 0.5))   // Map<String, Double>
  * writer.write("Path/Points", listOf(a, b, c))        // List<Pose>
  * ```
  *
- * It is an extension rather than a member for two reasons, both forced by the JVM: an inline
- * reified member would erase to `write(String, Object)` and clash with
- * [FateLogWriter.writeErased]'s signature, and a member of that name would win overload resolution
- * against this one at every call site, so the reified path would never run.
+ * The JVM leaves no choice about it being an extension. As a member it would erase to
+ * `write(String, Object)` and clash with [FateLogWriter.writeErased]. Give that member the name
+ * `write` instead and it wins overload resolution at every call site, so this reified version never
+ * runs.
  *
  * @see FateLogWriter.write
  */

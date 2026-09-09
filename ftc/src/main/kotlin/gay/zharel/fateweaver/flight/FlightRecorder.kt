@@ -91,10 +91,9 @@ object FlightRecorder : OpModeManagerNotifier.Notifications, Telemetry {
      * Writes an object to a channel identified by name, inferring the schema from the object's
      * runtime class.
      *
-     * **Kotlin callers should prefer the reified [write] extension**, which additionally recovers
-     * generic type arguments; this overload is what Java sees under the name `write`. A runtime
-     * class carries no type arguments, so a [Map] or [Collection] passed here is rejected — create
-     * the channel with an explicit schema instead, e.g.
+     * Java sees this as `write`. Kotlin callers should reach for the reified [write] extension
+     * instead, which also recovers type arguments. A runtime class has no type arguments, so a [Map]
+     * or [Collection] passed here is rejected. Create the channel with an explicit schema instead:
      * `createChannel("k", new MapSchema<>(StringSchema.INSTANCE, DoubleSchema.INSTANCE))`.
      */
     @JvmStatic
@@ -109,8 +108,8 @@ object FlightRecorder : OpModeManagerNotifier.Notifications, Telemetry {
      * Writes an object to a channel identified by name, inferring the schema from the fully
      * resolved type [type] rather than from [obj]'s erased runtime class.
      *
-     * This is the entry point behind the reified [write] extension; call it directly when a
-     * [KType] is obtained some other way.
+     * This is what the reified [write] extension calls. Call it directly if you got a [KType] some
+     * other way.
      *
      * @see gay.zharel.fateweaver.log.FateLogWriter.write
      */
@@ -147,7 +146,7 @@ object FlightRecorder : OpModeManagerNotifier.Notifications, Telemetry {
 
     /**
      * Creates a new log channel attached to the current OpMode's writer, with a schema inferred
-     * from the reified type [T] — type arguments included.
+     * from the reified type [T], type arguments included.
      *
      * ```kotlin
      * val powers = FlightRecorder.createChannel<Map<String, Double>>("Motors/Powers")
@@ -299,21 +298,21 @@ object FlightRecorder : OpModeManagerNotifier.Notifications, Telemetry {
 }
 
 /**
- * Writes an object to a channel identified by name, inferring the schema from [T]'s full static
- * type — type arguments included.
+ * Writes an object to a channel identified by name, inferring the schema from [T]'s static type,
+ * type arguments included.
  *
- * This is the Kotlin-facing form of [FlightRecorder.writeErased], and the only one that can encode
- * a parameterized value addressed by channel name:
+ * This is the Kotlin form of [FlightRecorder.writeErased], and the only way to write a
+ * parameterized value by channel name:
  *
  * ```kotlin
  * FlightRecorder.write("Motors/Powers", mapOf("fl" to 0.5))   // Map<String, Double>
  * FlightRecorder.write("Path/Points", listOf(a, b, c))        // List<Pose>
  * ```
  *
- * It is an extension rather than a member for two reasons, both forced by the JVM: an inline
- * reified member would erase to `write(String, Object)` and clash with
- * [FlightRecorder.writeErased]'s signature, and a member of that name would win overload
- * resolution against this one at every call site, so the reified path would never run.
+ * The JVM leaves no choice about it being an extension. As a member it would erase to
+ * `write(String, Object)` and clash with [FlightRecorder.writeErased]. Give that member the name
+ * `write` instead and it wins overload resolution at every call site, so this reified version never
+ * runs.
  *
  * @see FlightRecorder.write
  */

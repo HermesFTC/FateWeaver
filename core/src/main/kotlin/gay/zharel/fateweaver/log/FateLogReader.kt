@@ -10,6 +10,7 @@ import gay.zharel.fateweaver.schemas.FateSchema
 import gay.zharel.fateweaver.schemas.IntSchema
 import gay.zharel.fateweaver.schemas.LongSchema
 import gay.zharel.fateweaver.schemas.MapSchema
+import gay.zharel.fateweaver.schemas.PrimitiveArraySchema
 import gay.zharel.fateweaver.schemas.ReflectedClassSchema
 import gay.zharel.fateweaver.schemas.StringSchema
 import gay.zharel.fateweaver.schemas.TranslatedSchema
@@ -293,6 +294,20 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
                 val length = ByteBuffer.wrap(lengthBytes).int
 
                 // Read array elements
+                val elements = mutableListOf<Any>()
+                repeat(length) {
+                    elements.add(readObject(schema.elementSchema))
+                }
+                elements.toTypedArray()
+            }
+            is PrimitiveArraySchema<*> -> {
+                // Same wire format as ArraySchema. The reader builds ArraySchema from the ARRAY
+                // tag and never constructs these itself, so this only runs when a caller hands
+                // readObject a writer-side schema. Decode to a boxed array either way.
+                val lengthBytes = ByteArray(4)
+                stream.read(lengthBytes)
+                val length = ByteBuffer.wrap(lengthBytes).int
+
                 val elements = mutableListOf<Any>()
                 repeat(length) {
                     elements.add(readObject(schema.elementSchema))

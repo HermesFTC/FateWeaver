@@ -98,7 +98,7 @@ open class ReflectedClassSchema<T : Any>(
                 typeProp.get(cls.companionObjectInstance!!)
             } else if (cls.staticProperties.any { it.name.uppercase() == TypedClassSchema.TYPE_FIELD_NAME }) {
                 // A static property has no receiver, so staticProperties yields KProperty0, not
-                // KProperty1 — reading it takes no argument.
+                // KProperty1. Reading it takes no argument.
                 cls.staticProperties.first { it.name.uppercase() == TypedClassSchema.TYPE_FIELD_NAME }.get()
             } else null
 
@@ -170,28 +170,21 @@ class TypedClassSchema<T : Any>(
 }
 
 /**
- * A flexible schema for custom serialization of objects with user-defined encoding logic.
+ * A schema you define by hand, by naming the components and supplying a function that produces them.
  *
- * CustomStructSchema provides maximum flexibility for serializing objects by allowing users to
- * define exactly how their objects should be decomposed into primitive components. This is particularly
- * useful for:
- * - **Legacy Objects**: Classes that can't be modified to use reflection-based serialization
- * - **Optimized Encoding**: Custom logic to minimize serialized size or improve performance
- * - **Data Transformation**: Converting objects during serialization (e.g., coordinate transformations)
- * - **Selective Serialization**: Including only specific fields or computed values
- * - **Version Compatibility**: Maintaining backward compatibility with different object versions
+ * Nothing here is reflected, so this is the way in for a class you can't modify, and the way to
+ * write fewer bytes than reflection would: drop fields you'll never plot, round a double, convert
+ * units, or emit a computed value that isn't a field at all.
  *
- * ## Architecture
+ * ## How it works
  *
- * The schema uses a component-based approach where:
- * 1. Objects are decomposed into a list of primitive components via the [encoder] function
- * 2. Each component has a corresponding name and schema for serialization
- * 3. Components are serialized in the order they appear in [componentNames]
- * 4. A type string is automatically prepended to identify the object type
+ * [encoder] turns one object into a list of components. Each component has a name from
+ * [componentNames] and a schema from [componentSchemas] at the same index, and they are written in
+ * that order behind a leading type string.
  *
- * ## Binary Format
+ * ## Binary format
  *
- * **Schema Encoding**:
+ * The schema:
  * ```
  * [4 bytes: tag] [4 bytes: component count]
  * [4 bytes: ".type" length] [".type" bytes] [StringSchema]
@@ -200,15 +193,15 @@ class TypedClassSchema<T : Any>(
  * ...
  * ```
  *
- * **Object Encoding**:
+ * An encoded object:
  * ```
  * [4 bytes: type length] [type string bytes]
  * [component1 data] [component2 data] ...
  * ```
  *
- * ## Usage Examples
+ * ## Examples
  *
- * ### Basic Usage
+ * ### Basic usage
  * ```kotlin
  * data class Person(val name: String, val age: Int, val email: String)
  *
@@ -220,7 +213,7 @@ class TypedClassSchema<T : Any>(
  * )
  * ```
  *
- * ### Data Transformation
+ * ### Transforming on the way out
  * ```kotlin
  * val transformedSchema = CustomStructSchema<Person>(
  *     type = "NormalizedPerson",
@@ -291,10 +284,9 @@ class CustomStructSchema<T : Any>(
      * - Contain values compatible with the corresponding schemas
      * - Be deterministic (same object should always produce the same components)
      *
-     * **Performance Note**: This function is called twice during serialization - once
-     * for size calculation and once for actual encoding.
-     * Avoid expensive computations
-     * or consider caching results if the same object is serialized multiple times.
+     * The writer calls this twice per logged value, once to size the output and once to encode it,
+     * so keep it to field reads and arithmetic. Anything expensive runs at double the rate you
+     * expect.
      */
     val encoder: (T) -> List<Any>
 ) : FateSchema<T> {

@@ -28,6 +28,8 @@ class TopLevelGenericsTest {
 
     data class Point(@JvmField val x: Int, @JvmField val y: Int)
 
+    class Reading(@JvmField val ids: IntArray, @JvmField val flags: BooleanArray)
+
     /** Writes to one channel, then reads the channel schema and every message back. */
     private fun roundTrip(write: (FateLogWriter) -> Unit): Pair<FateSchema<*>, List<Any?>> {
         val bytes = ByteArrayOutputStream()
@@ -161,6 +163,27 @@ class TopLevelGenericsTest {
             FateLogWriter(ByteArrayOutputStream()).use { it.write("powers", value) }
         }
         assertTrue(error.message!!.contains("MapSchema"), error.message)
+    }
+
+    @Test
+    fun testPrimitiveArrayChannelRoundTrips() {
+        // ArraySchema is a FateSchema<Array<T>>, so routing a DoubleArray through it threw
+        // "ClassCastException: [D cannot be cast to [Ljava.lang.Object;" at the first write.
+        // Only a round trip through the writer catches that; testing the schema in isolation
+        // with a boxed array does not.
+        val (schema, data) = roundTrip { it.createChannel("powers", DoubleArray::class.java).put(doubleArrayOf(0.8, 0.6)) }
+
+        assertEquals(FateSchema.TypeRegistry.ARRAY.value, schema.tag)
+        assertArrayEquals(arrayOf<Any>(0.8, 0.6), data.single() as Array<*>)
+    }
+
+    @Test
+    fun testPrimitiveArrayFieldRoundTrips() {
+        val (_, data) = roundTrip { it.write("reading", Reading(intArrayOf(1, 2), booleanArrayOf(true))) }
+
+        val decoded = data.single() as Map<*, *>
+        assertArrayEquals(arrayOf<Any>(1, 2), decoded["ids"] as Array<*>)
+        assertArrayEquals(arrayOf<Any>(true), decoded["flags"] as Array<*>)
     }
 
     @Test

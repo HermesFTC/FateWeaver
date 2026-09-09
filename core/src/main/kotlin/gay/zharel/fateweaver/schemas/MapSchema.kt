@@ -8,41 +8,41 @@ import java.nio.ByteBuffer
  * Keys are not restricted to strings: any schema-able type works, so `Map<Int, Pose>` and
  * `Map<MyEnum, Double>` are both encodable.
  *
- * ## Binary Format
+ * ## Binary format
  *
- * **Schema Encoding**:
+ * The schema:
  * ```
  * [4 bytes: tag] [key schema blob] [value schema blob]
  * ```
  *
- * **Object Encoding**:
+ * An encoded map:
  * ```
  * [4 bytes: entry count N] [key1][value1] [key2][value2] ... [keyN][valueN]
  * ```
  *
- * Entries are written in the map's own iteration order. That order is *not* part of the format
- * contract — every key is written explicitly, so a [HashMap] and a [LinkedHashMap] with the same
- * contents both encode validly, just to different bytes.
+ * Entries go out in the map's own iteration order, which is *not* part of the format contract.
+ * Every key is written explicitly, so a [HashMap] and a [LinkedHashMap] holding the same entries
+ * both encode validly, just to different bytes.
  *
  * ## Mutation
  *
- * [objSize] and [encodeObject] are two separate calls made by
- * [gay.zharel.fateweaver.log.FateLogWriter.write]. The map must not be mutated between them; doing
- * so fails loudly — either a [java.nio.BufferOverflowException] or the writer's "encoded object does
- * not match reported size" check — rather than writing corrupt bytes. Pass a defensive copy if the
- * map may be mutated by another thread.
+ * [gay.zharel.fateweaver.log.FateLogWriter.write] calls [objSize] and [encodeObject] separately, so
+ * don't mutate the map in between. If you do, you get either a [java.nio.BufferOverflowException] or
+ * the writer's "encoded object does not match reported size" check, not corrupt bytes. Pass a copy
+ * if another thread might touch the map.
  *
  * ## Nulls
  *
- * The FateWeaver format has no encoding for null, so [K] and [V] are bounded to [Any] and null keys
- * and values are rejected at compile time.
+ * The format has no encoding for null. [K] and [V] are bounded to [Any], so null keys and values
+ * are a compile error.
  *
- * ## Size Limits
+ * ## Size limits
  *
- * [objSize] returns an [Int], so a map whose encoding would exceed 2 GiB overflows and the writer's
- * buffer allocation then throws. Loud, but not diagnosable — keep logged maps to a sane size.
+ * [objSize] returns an [Int], so a map that would encode to more than 2 GiB overflows it and the
+ * writer's buffer allocation throws. You'll notice, but the error won't tell you why. Keep logged
+ * maps to a sane size.
  *
- * ## Usage Example
+ * ## Example
  *
  * ```kotlin
  * val powers = writer.createChannel("Motors/Powers", MapSchema(StringSchema, DoubleSchema))
