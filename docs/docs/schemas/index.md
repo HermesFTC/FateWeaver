@@ -28,6 +28,7 @@ graph TD
     C --> C1[ArraySchema]
     C --> C2[MapSchema]
     C --> C3[EnumSchema]
+    C --> C4[OptionalSchema]
 
     D --> D1[ReflectedClassSchema]
     D --> D2[TypedClassSchema]
@@ -37,6 +38,6 @@ graph TD
 
 ## Quick links
 
-- **[Collection Schemas](collection-schemas.md)** - Arrays, maps and enums
+- **[Collection Schemas](collection-schemas.md)** - Arrays, maps, enums and optionals
 - **[Schema Registry](registry.md)** - Global schema management and reuse
 - **[Selection Guide](guide.md)** - Performance tips and best practices

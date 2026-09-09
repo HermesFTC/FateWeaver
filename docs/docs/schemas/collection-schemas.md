@@ -102,14 +102,53 @@ A channel's schema is also fixed once the channel exists. Write `Map<String, Dou
 
 `FateLogWriter` has the same API outside FTC. Import the extension from `gay.zharel.fateweaver.log`.
 
+## Nulls
+
+A nullable type infers an `OptionalSchema`, encoded as a presence byte followed by the value when
+there is one. Nothing about this is opt-in: declaring the property nullable is the whole API.
+
+=== "Kotlin"
+
+    ```kotlin
+    class Target(val name: String, val pose: Pose?)          // pose is optional
+    class Readings(val values: Map<String, Double?>)         // values may be absent
+    class Labels(val items: List<String?>)                   // elements may be absent
+    ```
+
+=== "Java"
+
+    ```java
+    // Optional<T> gets the same tag and the same bytes as Kotlin's T?
+    public class Target {
+        public final String name;
+        public final Optional<Pose> pose;
+    }
+
+    // OptionalInt, OptionalLong and OptionalDouble work too
+    public class Counters {
+        public final OptionalDouble voltage;
+    }
+    ```
+
+An absent value costs one byte; a present one costs one byte more than it would unwrapped. Non-null
+fields are unchanged, so this does not make your existing logs any bigger.
+
+A null in a field that isn't declared nullable is still an error naming the field. That case shows
+up with Java fields and Kotlin platform types, where the declaration says non-null and the value
+disagrees.
+
+!!! warning "Decoder compatibility"
+    Optional values use schema tag 9. As with maps, a decoder that predates the tag cannot skip past
+    it and will stop reading at the first channel that uses one.
+
 ## Requirements
 
 The format is fixed-shape, so collections must be homogeneous and fully typed:
 
 - `Map<String, Any>`, `List<*>` and raw types are rejected when the schema is built, with an error
   naming the offending field and type.
-- Nullable element, key or value types (`List<String?>`, `Map<String, Double?>`) are rejected. The
-  format has no encoding for null.
+- Nullable element, key or value types (`List<String?>`, `Map<String, Double?>`) are fine. They
+  infer an `OptionalSchema`, which costs one byte per element.
 - Type arguments must be concrete. A generic holder like `class Box<T>(val items: List<T>)` can't be
   inferred; register a schema for the concrete type instead.
 

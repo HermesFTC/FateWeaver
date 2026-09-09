@@ -54,7 +54,7 @@ open class ReflectedClassSchema<T : Any>(
     /**
      * A property paired with the schema used to encode its value, resolved once per runtime class.
      */
-    protected class Accessor(val property: KProperty1<Any, *>, val schema: FateSchema<Any>)
+    protected class Accessor(val property: KProperty1<Any, *>, val schema: FateSchema<Any?>)
 
     /**
      * Returns the accessors for [obj]'s runtime class, in [fields] iteration order.
@@ -68,18 +68,29 @@ open class ReflectedClassSchema<T : Any>(
                         "but the class has no such property."
             )
             property.isAccessible = true
-            Accessor(property as KProperty1<Any, *>, schema as FateSchema<Any>)
+            Accessor(property as KProperty1<Any, *>, schema as FateSchema<Any?>)
         }
     }
 
     /**
-     * Reads [accessor]'s value from [obj], rejecting nulls: the format has no encoding for null.
+     * Reads [accessor]'s value from [obj].
+     *
+     * A null is only allowed when the field's schema is an [OptionalSchema], which is what a
+     * property declared nullable in Kotlin gets. Everything else still rejects null, because
+     * nothing downstream has a way to encode it. The case that reaches this in practice is a Java
+     * field, or a Kotlin platform type, that is declared non-null but isn't.
      */
-    protected fun valueOf(accessor: Accessor, obj: T): Any =
-        accessor.property.get(obj) ?: throw IllegalArgumentException(
-            "Cannot encode ${obj::class.qualifiedName}.${accessor.property.name}: value is null, " +
-                    "and the FateWeaver binary format has no encoding for null."
-        )
+    protected fun valueOf(accessor: Accessor, obj: T): Any? {
+        val value = accessor.property.get(obj)
+        if (value == null && accessor.schema !is OptionalSchema<*>) {
+            throw IllegalArgumentException(
+                "Cannot encode ${obj::class.qualifiedName}.${accessor.property.name}: value is " +
+                        "null, but the field is not declared nullable, so its schema has no " +
+                        "encoding for null. Declare the property as nullable to log it as optional."
+            )
+        }
+        return value
+    }
 
     override fun objSize(obj: T): Int =
         accessorsFor(obj).sumOf { it.schema.objSize(valueOf(it, obj)) }

@@ -28,6 +28,7 @@ graph TD
     C --> C1[ArraySchema]
     C --> C2[EnumSchema]
     C --> C3[MapSchema]
+    C --> C4[OptionalSchema]
 
     D --> D1[ReflectedClassSchema]
     D --> D2[TypedClassSchema]
@@ -225,7 +226,8 @@ Handles maps with an entry count prefix. Keys aren't restricted to strings; any 
 !!! warning "Homogeneous values only"
     The format is fixed-shape, so every value in a map must share one type. `Map<String, Any>` cannot
     be logged and is rejected when the schema is built. Entry order is not preserved as meaningful
-    information, and keys must be non-null.
+    information. A nullable value type such as `Map<String, Double?>` is fine and infers an
+    `OptionalSchema` for the value.
 
 ### EnumSchema<T>
 
@@ -315,9 +317,11 @@ schemas.
     - Private fields are skipped, with or without getters. Mark them public or use a
       `CustomStructSchema`.
     - Every write reads each field through reflection, which a `CustomStructSchema` avoids.
-    - Generic fields need concrete type arguments. `Map<String, Any>`, `List<*>` and nullable
-      element types like `List<String?>` are all rejected when the schema is built.
-    - Fields must be non-null at write time. The format has no encoding for null.
+    - Generic fields need concrete type arguments. `Map<String, Any>` and `List<*>` are rejected
+      when the schema is built. Nullable arguments like `List<String?>` are fine and infer as
+      optional elements.
+    - A field must be declared nullable to hold null. A `Foo?` property infers an
+      `OptionalSchema`; a non-null one that turns out to be null throws and names the field.
 
 ### TypedClassSchema<T>
 

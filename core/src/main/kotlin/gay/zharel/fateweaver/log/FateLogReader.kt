@@ -10,6 +10,9 @@ import gay.zharel.fateweaver.schemas.FateSchema
 import gay.zharel.fateweaver.schemas.IntSchema
 import gay.zharel.fateweaver.schemas.LongSchema
 import gay.zharel.fateweaver.schemas.MapSchema
+import gay.zharel.fateweaver.schemas.JavaOptionalSchema
+import gay.zharel.fateweaver.schemas.OptionalSchema
+import gay.zharel.fateweaver.schemas.PrimitiveOptionalSchema
 import gay.zharel.fateweaver.schemas.PrimitiveArraySchema
 import gay.zharel.fateweaver.schemas.ReflectedClassSchema
 import gay.zharel.fateweaver.schemas.StringSchema
@@ -156,6 +159,7 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
             FateSchema.TypeRegistry.ENUM.value -> readEnumSchema()
             FateSchema.TypeRegistry.ARRAY.value -> readArraySchema()
             FateSchema.TypeRegistry.MAP.value -> readMapSchema()
+            FateSchema.TypeRegistry.OPTIONAL.value -> readOptionalSchema()
             else -> throw IllegalArgumentException("Unknown schema tag: $tag")
         }
     }
@@ -188,6 +192,10 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
         val elementSchema = readSchema()
         return ArraySchema(elementSchema)
     }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun readOptionalSchema(): OptionalSchema<Any> =
+        OptionalSchema(readSchema() as FateSchema<Any>)
 
     @Suppress("UNCHECKED_CAST")
     private fun readMapSchema(): MapSchema<Any, Any> {
@@ -224,6 +232,13 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
         return ReflectedClassSchema<Any>(fields)
     }
 
+    /** Reads a presence byte, then the value it guards. */
+    private fun readOptional(valueSchema: FateSchema<*>): Any? {
+        val presence = ByteArray(1)
+        stream.read(presence)
+        return if (presence[0] == 0.toByte()) null else readObject(valueSchema)
+    }
+
     private fun readMessageEntry(): FateLogEntry.Message<*> {
         // Read channel index
         val indexBytes = ByteArray(4)
@@ -240,7 +255,13 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
         return FateLogEntry.Message(channelIndex, channelInfo.name, data)
     }
 
-    private fun readObject(schema: FateSchema<*>): Any {
+    /**
+     * Decodes one value.
+     *
+     * Returns null only for an absent [OptionalSchema] value, so every nullable in the decoded
+     * tree corresponds to a nullable in the schema.
+     */
+    private fun readObject(schema: FateSchema<*>): Any? {
         return when (schema) {
             is IntSchema -> {
                 val bytes = ByteArray(4)
@@ -294,7 +315,7 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
                 val length = ByteBuffer.wrap(lengthBytes).int
 
                 // Read array elements
-                val elements = mutableListOf<Any>()
+                val elements = mutableListOf<Any?>()
                 repeat(length) {
                     elements.add(readObject(schema.elementSchema))
                 }
@@ -308,12 +329,17 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
                 stream.read(lengthBytes)
                 val length = ByteBuffer.wrap(lengthBytes).int
 
-                val elements = mutableListOf<Any>()
+                val elements = mutableListOf<Any?>()
                 repeat(length) {
                     elements.add(readObject(schema.elementSchema))
                 }
                 elements.toTypedArray()
             }
+            is OptionalSchema<*> -> readOptional(schema.valueSchema)
+            // Optional<T> shares the OPTIONAL tag, so it decodes the same way. The reader always
+            // builds OptionalSchema from the tag and only sees these if handed a writer schema.
+            is JavaOptionalSchema<*> -> readOptional(schema.valueSchema)
+            is PrimitiveOptionalSchema<*> -> readOptional(schema.valueSchema)
             is MapSchema<*, *> -> {
                 // Read entry count
                 val countBytes = ByteArray(4)
@@ -324,7 +350,7 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
                 // Read entries in on-wire order. The pre-sized capacity is capped so a corrupt
                 // count cannot allocate its way to an OutOfMemoryError; the loop below fails
                 // naturally once the stream runs dry.
-                val entries = LinkedHashMap<Any, Any>(minOf(count, 1024))
+                val entries = LinkedHashMap<Any?, Any?>(minOf(count, 1024))
                 repeat(count) {
                     val key = readObject(schema.keySchema)
                     val value = readObject(schema.valueSchema)
@@ -333,7 +359,7 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
                 entries
             }
             is ReflectedClassSchema<*> -> {
-                val fieldValues = mutableMapOf<String, Any>()
+                val fieldValues = mutableMapOf<String, Any?>()
                 for ((fieldName, fieldSchema) in schema.fields) {
                     val fieldValue = readObject(fieldSchema)
                     fieldValues[fieldName] = fieldValue
@@ -342,7 +368,7 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
                 fieldValues
             }
             is CustomStructSchema<*> -> {
-                val components = mutableMapOf<String, Any>()
+                val components = mutableMapOf<String, Any?>()
                 for ((name, componentSchema) in schema.componentNames.zip(schema.componentSchemas)) {
                     val fieldValue = readObject(componentSchema)
                     components[name] = fieldValue

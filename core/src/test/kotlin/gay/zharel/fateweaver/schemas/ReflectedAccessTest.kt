@@ -1,6 +1,7 @@
 package gay.zharel.fateweaver.schemas
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -62,15 +63,27 @@ class ReflectedAccessTest {
     }
 
     @Test
-    fun testNullFieldIsRejectedWithFieldName() {
+    fun testNullableFieldEncodesAsOptional() {
         val schema = ReflectedClassSchema.createFromClass(WithNullable::class)
+
+        assertInstanceOf(OptionalSchema::class.java, schema.fields["name"])
+        assertEquals(1, schema.objSize(WithNullable(null)))
+        assertEquals(1 + 4 + 2, schema.objSize(WithNullable("hi")))
+    }
+
+    @Test
+    fun testNullInANonOptionalFieldIsRejectedWithFieldName() {
+        // A schema built by hand, or one inferred from a Java field whose non-null declaration
+        // lies, can pair a non-optional schema with a null value. That has no encoding, so it must
+        // name the field rather than write something wrong.
+        val schema = ReflectedClassSchema<WithNullable>(mapOf("name" to StringSchema))
 
         val error = assertThrows(IllegalArgumentException::class.java) {
             schema.objSize(WithNullable(null))
         }
 
         assertTrue(error.message!!.contains("WithNullable.name"), "was: ${error.message}")
-        assertTrue(error.message!!.contains("null"), "was: ${error.message}")
+        assertTrue(error.message!!.contains("not declared nullable"), "was: ${error.message}")
     }
 
     @Test

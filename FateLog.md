@@ -7,7 +7,7 @@ Robotics and embedded applications generate diverse telemetry at high rates. Tex
 
 - Efficient writes and reads with fixed/known sizes
 - Self‑describing streams via schema announcements
-- Support for primitives, arrays, maps, enums, and structured objects
+- Support for primitives, arrays, maps, enums, optional values, and structured objects
 
 ## Definitions
 
@@ -118,6 +118,7 @@ All schemas begin with a 4‑byte type tag (int) defined by the TypeRegistry:
 - 6 = ENUM (ordinal‑encoded with declared constant names)
 - 7 = ARRAY (homogeneous array)
 - 8 = MAP (key/value mapping with independently typed keys and values)
+- 9 = OPTIONAL (a value that may be absent)
 
 The schema payload that follows the tag depends on the tag value:
 
@@ -145,6 +146,18 @@ The schema payload that follows the tag depends on the tag value:
   - N entries, each: the key encoded with the key schema, immediately followed by the value encoded with the value schema
 
   Keys may use any schema, not just STRING; enum, array and CUSTOM keys are all legal. Entry order is writer‑defined and carries no meaning — every key is written explicitly, so readers must not rely on ordering. Keys are expected to be unique; a reader encountering duplicate keys should not assume the decoded entry count matches N.
+
+- OPTIONAL
+  - Nested schema bytes for the value type: one complete schema blob (tag + payload)
+
+  Objects are encoded as:
+  - 1 byte: presence. 0x00 = absent, 0x01 = present
+  - If present: the value encoded with the value schema, immediately following the presence byte
+  - If absent: nothing further
+
+  An absent value occupies exactly one byte. Any presence byte other than 0x00 or 0x01 indicates a corrupt or misaligned stream, and readers should reject it rather than guess.
+
+  OPTIONAL may wrap any schema, including another OPTIONAL, though writers have no reason to nest it. Writers must not emit OPTIONAL for a value that is never absent: doing so is legal but costs a byte per record for nothing.
 
 - CUSTOM (structured object)
   Represents a structured object with named fields. The schema describes the field layout, and objects are encoded as the concatenation of field values in declaration order.

@@ -33,8 +33,9 @@ import java.nio.ByteBuffer
  *
  * ## Nulls
  *
- * The format has no encoding for null. [K] and [V] are bounded to [Any], so null keys and values
- * are a compile error.
+ * A null key or value needs an [OptionalSchema] around the relevant side. `Map<String, Double?>`
+ * infers as `MapSchema(StringSchema, OptionalSchema(DoubleSchema))`, and each absent value costs
+ * one byte. Passing a null to a schema that isn't optional throws rather than writing bad bytes.
  *
  * ## Size limits
  *
@@ -54,7 +55,7 @@ import java.nio.ByteBuffer
  * @param keySchema schema used to encode each key
  * @param valueSchema schema used to encode each value
  */
-class MapSchema<K : Any, V : Any>(
+class MapSchema<K, V>(
     val keySchema: FateSchema<K>,
     val valueSchema: FateSchema<V>,
 ) : FateSchema<@JvmSuppressWildcards Map<K, V>> {

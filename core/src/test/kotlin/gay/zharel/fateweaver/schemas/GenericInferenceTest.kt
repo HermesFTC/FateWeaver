@@ -106,11 +106,13 @@ class GenericInferenceTest {
     }
 
     @Test
-    fun testNullableTypeArgumentRejected() {
-        val error = assertThrows(IllegalArgumentException::class.java) {
-            FateSchema.schemaOfClass(NullableValueHolder::class)
-        }
-        assertTrue(error.message!!.contains("nullable"), "was: ${error.message}")
+    fun testNullableTypeArgumentBecomesOptional() {
+        val schema = FateSchema.schemaOfClass(NullableValueHolder::class) as ReflectedClassSchema<*>
+        val items = assertInstanceOf(MapSchema::class.java, schema.fields["items"])
+
+        assertSame(StringSchema, items.keySchema)
+        val value = assertInstanceOf(OptionalSchema::class.java, items.valueSchema)
+        assertSame(DoubleSchema, value.valueSchema)
     }
 
     @Test

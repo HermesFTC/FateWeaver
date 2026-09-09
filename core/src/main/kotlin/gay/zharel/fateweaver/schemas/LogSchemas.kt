@@ -6,6 +6,7 @@ import kotlin.reflect.KClass
 import kotlin.reflect.KType
 import kotlin.reflect.KTypeParameter
 import kotlin.reflect.full.isSubclassOf
+import kotlin.reflect.full.withNullability
 
 /**
  * Describes how one type becomes bytes.
@@ -32,6 +33,11 @@ import kotlin.reflect.full.isSubclassOf
  * - `DoubleArraySchema` and friends: Kotlin's primitive arrays, same bytes without boxing
  * - `MapSchema<K, V>`: maps with independently typed keys and values
  * - `EnumSchema<T>`: enums, as a 4-byte ordinal
+ *
+ * ### Optionals
+ * - `OptionalSchema<T>`: a nullable `T?`, as a presence byte then the value
+ * - `JavaOptionalSchema<T>`: `java.util.Optional<T>`, same tag and same bytes
+ * - `OptionalIntSchema` and friends: `OptionalInt`, `OptionalLong`, `OptionalDouble`
  *
  * ### Classes
  * - `ReflectedClassSchema<T>`: built by reflecting over public properties
@@ -200,7 +206,10 @@ sealed interface FateSchema<T> {
         ARRAY(7),
 
         /** Map schema with independently typed keys and values */
-        MAP(8);
+        MAP(8),
+
+        /** Optional schema: a presence byte followed by the value, if present */
+        OPTIONAL(9);
     }
 
     companion object Companion {
@@ -445,6 +454,14 @@ sealed interface FateSchema<T> {
          * @see schemaOfType
          */
         internal fun schemaOfType(type: KType, path: String): FateSchema<*> {
+            // A nullable type is the non-null one behind a presence byte. Unwrap first so every
+            // rule below sees the underlying type, then wrap the result.
+            if (type.isMarkedNullable) {
+                @Suppress("UNCHECKED_CAST")
+                val valueSchema = schemaOfType(type.withNullability(false), path) as FateSchema<Any>
+                return OptionalSchema(valueSchema)
+            }
+
             val classifier = type.classifier
                 ?: throw unschemable(path, type, "its classifier could not be resolved")
 
@@ -459,6 +476,14 @@ sealed interface FateSchema<T> {
             // is the escape hatch for Map, Collection and anything else inference rejects.
             registry[classifier]?.let { return it }
             parameterizedRegistry[type]?.let { return it }
+
+            // Optional<T> says what T? says, so it gets the same OPTIONAL tag and the same bytes.
+            if (classifier == java.util.Optional::class) {
+                requireArity(path, type, 1, "Optional")
+                @Suppress("UNCHECKED_CAST")
+                val valueSchema = schemaOfArgument(type, 0, path) as FateSchema<Any>
+                return JavaOptionalSchema(valueSchema).also { parameterizedRegistry[type] = it }
+            }
 
             val isMap = classifier.isSubclassOf(Map::class)
             val isCollection = classifier.isSubclassOf(Collection::class)
@@ -488,6 +513,9 @@ sealed interface FateSchema<T> {
         /**
          * Resolves the schema for the type argument at [index] of [owner], rejecting anything that
          * carries too little type information to encode.
+         *
+         * A nullable argument is wrapped in an [OptionalSchema] by [schemaOfType], the same as a
+         * nullable property.
          */
         private fun schemaOfArgument(owner: KType, index: Int, path: String): FateSchema<*> {
             val position = "type argument #${index + 1}"
@@ -495,14 +523,6 @@ sealed interface FateSchema<T> {
             val argType = owner.arguments[index].type ?: throw unschemable(
                 path, owner, "$position is a star projection ('*'), which carries no type information"
             )
-
-            if (argType.isMarkedNullable) {
-                throw unschemable(
-                    path, owner,
-                    "$position ('$argType') is nullable, and the FateWeaver binary format has no " +
-                            "encoding for null"
-                )
-            }
 
             val argClassifier = argType.classifier
             if (argClassifier !is KClass<*>) {
@@ -536,7 +556,7 @@ sealed interface FateSchema<T> {
 
         private fun unschemable(path: String, type: KType, reason: String) = IllegalArgumentException(
             "Cannot infer a FateWeaver schema for $path (declared type '$type'): $reason. " +
-                    "Use a concrete, non-null type; or mark the property with @FateIgnore; " +
+                    "Use a concrete type; or mark the property with @FateIgnore; " +
                     "or register a schema explicitly with FateSchema.registerSchema(...)."
         )
 
@@ -578,6 +598,13 @@ sealed interface FateSchema<T> {
             LongArray::class.java -> LongArraySchema
             BooleanArray::class.java -> BooleanArraySchema
             FloatArray::class.java -> FloatArraySchema
+
+            // OptionalInt/Long/Double are concrete, so unlike Optional<T> they need no type
+            // argument. Without these they would reflect to a struct with no fields and encode
+            // nothing at all.
+            java.util.OptionalInt::class.java -> OptionalIntSchema
+            java.util.OptionalLong::class.java -> OptionalLongSchema
+            java.util.OptionalDouble::class.java -> OptionalDoubleSchema
             else -> {
                 if (cls.isEnum) {
                     EnumSchema(cls as Class<out Enum<*>>)
@@ -585,6 +612,14 @@ sealed interface FateSchema<T> {
                     // Checked before the map/collection guard below: an array's component type is
                     // preserved on the Class, so arrays need no type-argument information.
                     ArraySchema(schemaOfClass(cls.componentType!!))
+                } else if (cls == java.util.Optional::class.java) {
+                    throw IllegalArgumentException(
+                        "Cannot infer a FateWeaver schema for the raw class java.util.Optional: " +
+                                "its value type is erased on Class. Infer from a declared property " +
+                                "typed Optional<T>, call FateSchema.schemaOfType(typeOf<...>()), " +
+                                "or construct the schema explicitly, e.g. " +
+                                "JavaOptionalSchema(DoubleSchema)."
+                    )
                 } else if (java.util.Map::class.java.isAssignableFrom(cls) ||
                     java.util.Collection::class.java.isAssignableFrom(cls)
                 ) {
