@@ -1,19 +1,17 @@
-# Schema Registry
+# Schema registry
 
-The schema registry provides global schema management and reuse.
+The registry maps a class to the schema used for it, everywhere.
 
-## Automatic Registration
+## Automatic registration
 
-When you create a channel for a class, FateWeaver automatically:
+Creating a channel for a class looks in the registry first. On a miss, FateWeaver builds a schema by
+reflection (a `TypedClassSchema` if the class has an `AS_TYPE` constant, otherwise a
+`ReflectedClassSchema`), stores it, and hands back a channel using it. Every later channel for that
+class reuses the same schema, so the reflection cost is paid once.
 
-1. Checks if a schema is already registered for that class
-2. If not, creates an appropriate schema (Reflected or Typed based on AS_TYPE)
-3. Registers the schema for future use
-4. Returns a channel using the registered schema
+## Manual registration
 
-## Manual Registration
-
-You can register custom schemas to override the defaults:
+Register your own schema to override the reflected default:
 
 === "Kotlin"
 
@@ -32,7 +30,7 @@ You can register custom schemas to override the defaults:
     // All future channels automatically use your custom schema
     val poseChannel1 = FlightRecorder.createChannel("Robot/Pose", Pose2d::class.java)
     val poseChannel2 = FlightRecorder.createChannel("Target/Pose", Pose2d::class.java)
-    // Both use optimizedPoseSchema automatically!
+    // Both use optimizedPoseSchema
     ```
 
 === "Java"
@@ -54,14 +52,16 @@ You can register custom schemas to override the defaults:
         FlightRecorder.createChannel("Robot/Pose", Pose2d.class);
     FlightLogChannel<Pose2d> poseChannel2 =
         FlightRecorder.createChannel("Target/Pose", Pose2d.class);
-    // Both use optimizedPoseSchema automatically!
+    // Both use optimizedPoseSchema
     ```
 
-## Best Practices for Registration
+## Where to register
 
-1. **Register Early**: Set up schemas in your OpMode's `init()` method
-2. **One Place**: Keep all schema registrations in a single location
-3. **Document Choices**: Comment why you chose custom schemas over defaults
+Register in your OpMode's `init()`, before any channel exists. A schema registered after a channel
+was created does nothing for that channel, since the channel already has one.
+
+Keep every registration in one place. Registering the same class twice overwrites silently, and
+that is much easier to spot when the calls sit next to each other.
 
 === "Kotlin"
 

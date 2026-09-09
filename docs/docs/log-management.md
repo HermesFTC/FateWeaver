@@ -1,49 +1,40 @@
-# Log Management
+# Log management
 
-This guide covers how to download, organize, and analyze your FateWeaver log files using AdvantageScope.
+Getting logs off the robot and into AdvantageScope.
 
-## Downloading Logs
+## Downloading logs
 
-FateWeaver provides a built-in web interface for downloading log files from your robot.
+FateWeaver serves your logs over the robot's own WiFi. Connect to the robot network, then open
+`192.168.43.1:8080/fate/logs` in a browser. You get a list of log files with timestamps and sizes;
+click one to download it.
 
-### Basic Download Process
+!!! tip "Browser compatibility"
+    Any modern browser works. Chrome, Firefox and Safari are the ones we've actually tested.
 
-1. **Connect to Robot WiFi**: Connect your computer to the robot's WiFi network
-2. **Open Web Interface**: Navigate to `192.168.43.1:8080/fate/logs` in your browser
-3. **Browse Files**: View available log files with timestamps and sizes
-4. **Download**: Click on any log file to download it to your computer
+## Viewing logs with AdvantageScope
 
-!!! tip "Browser Compatibility"
-    The web interface works with any modern browser. For best results, use Chrome, Firefox, or Safari.
+[AdvantageScope](https://github.com/Mechanical-Advantage/AdvantageScope) is what we use to read
+FateWeaver logs. Grab a build from
+[Releases](https://github.com/Mechanical-Advantage/AdvantageScope/releases) and install it the usual
+way for your platform.
 
-## Viewing Logs with AdvantageScope
+### Opening FateWeaver logs
 
-[AdvantageScope](https://github.com/Mechanical-Advantage/AdvantageScope) is the recommended tool for viewing FateWeaver logs.
-
-### Installing AdvantageScope
-
-1. **Download**: Get the latest release from [GitHub Releases](https://github.com/Mechanical-Advantage/AdvantageScope/releases)
-2. **Install**: Follow the installation instructions for your platform
-3. **Launch**: Open AdvantageScope
-
-### Opening FateWeaver Logs
-
-1. **File Menu**: Click `File` → `Open Log File`
-2. **Select File**: Choose your `.wpilog` file
-3. **Wait for Processing**: AdvantageScope will parse the log file
-4. **Explore Data**: Browse the data tree on the left
+`File` → `Open Log File`, pick your `.wpilog`, and wait for the parse. Your channels show up in the
+data tree on the left.
 
 !!! warning "Map channels need an up-to-date decoder"
     Map channels use schema tag 8, which was added after the initial format release. Log entries are
     not length-prefixed, so a decoder that doesn't recognize the tag cannot skip past it and will
-    stop reading at that point — the log appears truncated rather than reporting an error. Make sure
-    your viewer supports MAP before producing logs that contain map channels.
+    stop reading at that point. The log looks truncated instead of reporting an error, which is the
+    worse failure. Check that your viewer supports MAP before logging map channels.
 
-### Key AdvantageScope Features
+### Working with the data
 
-#### Data Tree Navigation
+#### The channel tree
 
-FateWeaver's hierarchical channel names create an organized tree structure:
+Slashes in channel names become folders, so naming channels `Robot/Pose/x` rather than `robotPoseX`
+is what gets you a tree worth navigating:
 
 ```
 📁 Robot
@@ -70,25 +61,19 @@ FateWeaver's hierarchical channel names create an organized tree structure:
     📊 Confidence (double)
 ```
 
-#### Visualization Types
+#### Views worth knowing
 
-- **Line Graph**: Time-series plots of numeric data
-- **Field View**: 2D visualization of robot position and paths
-- **3D Field**: Three-dimensional robot visualization
-- **Console**: Text-based data and events
-- **Joysticks**: Gamepad input visualization
+Line Graph for anything numeric over time. Field View for a pose channel, which draws the robot's
+path on the field. 3D Field if you're logging a full 3D pose. Console for string channels, and
+Joysticks for gamepad input.
 
-#### Advanced Analysis
+You can open several views at once and they stay locked to the same timeline, so scrubbing to the
+moment the robot stalled shows you every channel at that instant. Plots export as images, data as
+CSV.
 
-- **Multiple Plots**: Compare different data streams
-- **Synchronized Views**: Link multiple visualizations by time
-- **Export Functions**: Save plots as images or data as CSV
-- **Statistics**: Built-in analysis tools for performance metrics
+### A typical pass over a match log
 
-### Example Analysis Workflow
-
-1. **Load Log**: Open your match or test log file
-2. **Robot Path**: Add `Robot/Pose` to a Field View to see robot movement
-3. **Performance**: Plot motor velocities and battery voltage over time
-4. **Correlation**: Compare sensor readings with robot behavior
-5. **Export Results**: Save key plots for team review
+Open the log, drop `Robot/Pose` into a Field View, and watch where the robot actually went. Then put
+motor velocities and battery voltage on a line graph underneath. Voltage sag lining up with a
+velocity drop usually explains a lot on its own. Scrub to anything that looks wrong and check what
+the sensors were reporting at that timestamp, then export the plots that made the point.

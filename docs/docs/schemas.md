@@ -1,17 +1,15 @@
-# Schema System
+# Schema system
 
-FateWeaver's schema system is the foundation that enables type-safe, efficient serialization of your robot data. Understanding schemas will help you optimize your logging and handle complex data structures effectively.
+A schema describes how one type becomes bytes. FateWeaver writes the schema into the log ahead of
+the data, so a reader can decode the file without knowing anything about your code.
 
-## What are Schemas?
+## What are schemas?
 
-A **schema** defines how FateWeaver serializes and deserializes objects of a specific type. Each schema:
+Every channel has exactly one schema, and that schema fixes the channel's layout for the life of
+the log. It gives you the field names and types a viewer needs, and it makes a type mismatch a
+compile error rather than a plot that looks wrong three matches later.
 
-- Describes the structure of your data
-- Provides efficient binary encoding/decoding
-- Embeds metadata for compatibility with visualization tools
-- Ensures type safety at compile time
-
-## Schema Types Overview
+## Schema types overview
 
 FateWeaver provides several categories of schemas:
 
@@ -34,11 +32,13 @@ graph TD
     D --> D1[ReflectedClassSchema]
     D --> D2[TypedClassSchema]
     D --> D3[CustomStructSchema]
+    D --> D4[TranslatedSchema]
 ```
 
-## Primitive Schemas
+## Primitive schemas
 
-Primitive schemas handle basic data types with optimized encoding:
+Five singletons covering the types that need no configuration. Each has a fixed size, so nothing has
+to be measured before writing.
 
 ### IntSchema
 
@@ -90,7 +90,9 @@ Serializes 64-bit signed integers, commonly used for timestamps.
 
 ### DoubleSchema
 
-Serializes 64-bit floating-point numbers with full precision.
+Serializes 64-bit floating-point numbers with full precision. `Float` fields and `FloatArray` use
+this too, widened on the way out, since the format has no float type. The conversion is exact, but
+the encoded value takes 8 bytes rather than 4.
 
 === "Kotlin"
 
@@ -160,7 +162,7 @@ Serializes boolean values as single bytes.
     limitSwitchChannel.put(limitSwitch.isPressed());
     ```
 
-## Collection Schemas
+## Collection schemas
 
 ### ArraySchema<T>
 
@@ -188,12 +190,14 @@ Handles arrays of any supported type with length prefixes.
     motorPowersChannel.put(new Double[]{0.8, 0.6, 0.7, 0.9});
     ```
 
-!!! tip "Primitive Arrays"
-    For primitive arrays (int[], double[], etc.), FateWeaver automatically boxes them. Consider using custom schemas for better performance with large arrays.
+!!! tip "Primitive arrays have their own schemas"
+    `DoubleArray`, `IntArray`, `LongArray` and `BooleanArray` get `DoubleArraySchema` and friends,
+    which write the same bytes as the boxed form with no allocation. You get them automatically
+    from `createChannel("Powers", DoubleArray::class.java)`.
 
 ### MapSchema<K, V>
 
-Handles maps with an entry count prefix. Keys are not restricted to strings — any supported type works.
+Handles maps with an entry count prefix. Keys aren't restricted to strings; any supported type works.
 
 === "Kotlin"
 
@@ -250,13 +254,14 @@ Efficiently serializes enums using ordinal values.
     allianceChannel.put(AllianceColor.RED);
     ```
 
-## Class Schemas
+## Class schemas
 
-Class schemas handle complex objects with multiple fields.
+Four ways to turn one of your own classes into bytes, from zero-effort to full control.
 
 ### ReflectedClassSchema<T>
 
-Automatically generates schemas using Java reflection. This is the default for most classes.
+Built by reflecting over the class's public properties. This is what you get when you pass a class
+to `createChannel` and say nothing else.
 
 === "Kotlin"
 
@@ -299,23 +304,20 @@ Automatically generates schemas using Java reflection. This is the default for m
     configChannel.put(new RobotConfig(1.0, 4.0, 14.5, 1.5));
     ```
 
-#### How Reflection Works
+#### How reflection works
 
-ReflectedClassSchema automatically:
-
-1. **Discovers Fields**: Finds all public fields (and properties in Kotlin)
-2. **Creates Schemas**: Recursively creates schemas for field types
-3. **Handles Nested Objects**: Supports arbitrarily nested class structures
-4. **Manages Collections**: Automatically handles arrays, `List`/`Set`, and `Map` fields, inferring
-   schemas from their declared element/key/value types
+`ReflectedClassSchema` walks the class's public fields (public properties in Kotlin) and builds a
+schema for each field's type. That runs recursively, so nested classes work, and it reads the
+declared type of arrays, `List`/`Set` and `Map` fields to infer their element, key and value
+schemas.
 
 !!! warning "Limitations"
-    - Only works with public fields
-    - Cannot handle private fields without getters
-    - May be slower than custom schemas for performance-critical code
-    - Generic fields need concrete type arguments: `Map<String, Any>`, `List<*>` and nullable
-      element types such as `List<String?>` are rejected when the schema is built
-    - Fields must be non-null at write time; the format has no encoding for null
+    - Private fields are skipped, with or without getters. Mark them public or use a
+      `CustomStructSchema`.
+    - Every write reads each field through reflection, which a `CustomStructSchema` avoids.
+    - Generic fields need concrete type arguments. `Map<String, Any>`, `List<*>` and nullable
+      element types like `List<String?>` are all rejected when the schema is built.
+    - Fields must be non-null at write time. The format has no encoding for null.
 
 ### TypedClassSchema<T>
 
@@ -361,14 +363,15 @@ activated by the `AS_TYPE` static field (Java) or companion object property (Kot
     // Automatically uses TypedClassSchema because of AS_TYPE
     ```
 
-#### Benefits of AS_TYPE
+#### Why bother with AS_TYPE
 
-- **Debugging**: Easier to identify data types in logs
-- **Tooling**: Better support in analysis tools
+The name goes into the log next to the fields, so a viewer or an analysis script can tell a
+`Pose2d` from any other three-double struct without matching on the channel name.
 
 ### CustomStructSchema<T>
 
-Provides complete control over serialization with custom encoding functions.
+You name the components and supply a function that pulls them out of the object. Nothing is
+reflected, and nothing is written that you didn't ask for.
 
 === "Kotlin"
 
@@ -409,7 +412,7 @@ Provides complete control over serialization with custom encoding functions.
         FlightRecorder.createChannel("Robot/Pose", customPoseSchema);
     ```
 
-#### Advanced Custom Schema Examples
+#### Advanced custom schema examples
 
 **Data Transformation:**
 === "Kotlin"
@@ -470,18 +473,14 @@ Provides complete control over serialization with custom encoding functions.
 
 ### TranslatedSchema<T, U>
 
-A wrapper schema that converts objects from one type to another during serialization.
-This is particularly useful for:
+Converts a value to another type on the way out, then encodes that. You give it a function from
+`T` to `U` and a schema for `U`.
 
-- **Legacy Classes**: Logging objects from libraries you can't modify
-- **Type Adapters**: Converting between incompatible types
-- **Wrapper Classes**: Unwrapping values before serialization
-- **Simplified Serialization**: Converting complex types to simpler representations
+This is the answer for a class you can't modify, from RoadRunner or any other library, and for
+wrappers you'd rather see unwrapped in the log. A `Rotation2d` becomes a plain double, and the plot
+is a heading in radians instead of a one-field struct.
 
-`TranslatedSchema` takes objects of type `T`, converts them to type `U` using a translation function,
-and then serializes them using the schema for type `U`.
-
-#### Basic Usage
+#### Basic usage
 
 === "Kotlin"
 
@@ -517,7 +516,7 @@ and then serializes them using the schema for type `U`.
     voltageChannel.put(new Voltage(12.6));  // Logs as 12.6 (double)
     ```
 
-#### Alternative Constructor
+#### Alternative constructor
 
 You can also construct `TranslatedSchema` by passing the target class directly:
 
@@ -541,7 +540,7 @@ You can also construct `TranslatedSchema` by passing the target class directly:
     // FateWeaver automatically finds/creates the schema for Double
     ```
 
-#### Advanced Examples
+#### Advanced examples
 
 **Converting Library Types:**
 
@@ -664,7 +663,7 @@ You can also construct `TranslatedSchema` by passing the target class directly:
     modeChannel.put(DriveMode.FIELD_CENTRIC);  // Logs as "FIELD_CENTRIC" (string)
     ```
 
-#### When to Use TranslatedSchema
+#### When to use TranslatedSchema
 
 | Situation | Use TranslatedSchema? | Alternative |
 |-----------|----------------------|-------------|
@@ -674,12 +673,12 @@ You can also construct `TranslatedSchema` by passing the target class directly:
 | Complex multi-field conversion | ⚠️ Maybe - consider CustomStructSchema | CustomStructSchema |
 | Simple type unwrapping | ✅ Yes - most elegant solution | Direct field access |
 
-#### Performance Considerations
+#### Performance considerations
 
-- **Translation Overhead**: The translation function is called for every object logged
-- **Schema Reuse**: The base schema is reused, so no schema creation overhead
-- **Keep It Simple**: Translation functions should be fast and lightweight
-- **Avoid Allocations**: Try to avoid creating temporary objects in the translation function when possible
+The translation function runs on every logged value, twice: once to size the output and once to
+encode it. The base schema is built once and reused, so nothing is reflected per write. Keep the
+function to field reads and arithmetic, and avoid allocating a temporary object in it if the channel
+is written every loop.
 
 !!! tip "Combining with Schema Registry"
     You can register `TranslatedSchema` instances globally to use them automatically:
@@ -691,11 +690,11 @@ You can also construct `TranslatedSchema` by passing the target class directly:
     val channel = FlightRecorder.createChannel("Battery/Voltage", Voltage::class.java)
     ```
 
-## Schema Registry
+## Schema registry
 
 The schema registry provides global schema management and reuse.
 
-### Automatic Registration
+### Automatic registration
 
 When you create a channel for a class, FateWeaver automatically:
 
@@ -704,7 +703,7 @@ When you create a channel for a class, FateWeaver automatically:
 3. Registers the schema for future use
 4. Returns a channel using the registered schema
 
-### Manual Registration
+### Manual registration
 
 You can register custom schemas to override the defaults:
 
@@ -725,7 +724,7 @@ You can register custom schemas to override the defaults:
     // All future channels automatically use your custom schema
     val poseChannel1 = FlightRecorder.createChannel("Robot/Pose", Pose2d::class.java)
     val poseChannel2 = FlightRecorder.createChannel("Target/Pose", Pose2d::class.java)
-    // Both use optimizedPoseSchema automatically!
+    // Both use optimizedPoseSchema
     ```
 
 === "Java"
@@ -747,14 +746,16 @@ You can register custom schemas to override the defaults:
         FlightRecorder.createChannel("Robot/Pose", Pose2d.class);
     FlightLogChannel<Pose2d> poseChannel2 =
         FlightRecorder.createChannel("Target/Pose", Pose2d.class);
-    // Both use optimizedPoseSchema automatically!
+    // Both use optimizedPoseSchema
     ```
 
-### Best Practices for Registration
+### Where to register
 
-1. **Register Early**: Set up schemas in your OpMode's `init()` method
-2. **One Place**: Keep all schema registrations in a single location
-3. **Document Choices**: Comment why you chose custom schemas over defaults
+Register in your OpMode's `init()`, before any channel exists. A schema registered after a channel
+was created does nothing for that channel, since the channel already has one.
+
+Keep every registration in one place. Registering the same class twice overwrites silently, and
+that is much easier to spot when the calls sit next to each other.
 
 === "Kotlin"
 
@@ -808,7 +809,7 @@ You can register custom schemas to override the defaults:
     }
     ```
 
-## Schema Selection Guide
+## Schema selection guide
 
 Choose the right schema type for your needs:
 
@@ -825,9 +826,9 @@ Choose the right schema type for your needs:
 | Unit conversion                     | CustomStructSchema         | Transform during logging   |
 | Selective logging                   | CustomStructSchema         | Choose which fields to log |
 
-## Troubleshooting Schemas
+## Troubleshooting schemas
 
-### Common Issues
+### Common issues
 
 **"Cannot create schema for class"**
 ```kotlin
@@ -847,12 +848,13 @@ data class BadClass(val lambda: () -> Unit)  // Functions not supported
 data class GoodClass(val value: Double)
 ```
 
-**"Schema mismatch"**
+**Channels using the wrong schema**
 ```kotlin
-// Problem: Changing schema after registration
+// Problem: registering twice. The second call overwrites the first without
+// complaining, and channels created before it keep the old schema.
 FateSchema.registerSchema(MyClass::class.java, schemaV1)
 // Later...
-FateSchema.registerSchema(MyClass::class.java, schemaV2)  // Error!
+FateSchema.registerSchema(MyClass::class.java, schemaV2)
 
-// Solution: Register schemas once, early in initialization
+// Solution: register each schema once, before any channel exists
 ```

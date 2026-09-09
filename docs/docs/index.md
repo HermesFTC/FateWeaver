@@ -2,20 +2,15 @@
 
 ![Maven Central Version](https://img.shields.io/maven-central/v/gay.zharel.fateweaver/ftc?style=for-the-badge&label=Latest%20Version)
 
-**FateWeaver** is a powerful RoadRunner-log based data logging library designed specifically for FTC robotics teams. It provides type-safe, efficient logging capabilities with seamless integration into existing FTC projects and full compatibility with AdvantageScope for data visualization.
+FateWeaver is a binary data logger for FTC robots. It writes RoadRunner-format logs that
+AdvantageScope opens directly.
 
-## Key Features
+Channels are typed, so writing a `Double` to an `Int` channel is a compile error rather than a
+garbled plot three matches later. Your own classes are logged by reflection, or by a schema you
+write when you want control over the bytes. It drops in where RoadRunner's `FlightRecorder` already
+is, and runs alongside the logging you already have.
 
-- **Type-Safe Logging**: Strongly typed channels prevent runtime errors and ensure data integrity
-- **Easy Integration**: Drop-in replacement for RoadRunner FlightRecorder with enhanced capabilities
-- **Custom Data Types**: Full support for complex objects using reflection or custom serialization
-- **Schema Registry**: Automatic schema management and reuse across your entire codebase
-- **AdvantageScope Compatible**: Direct integration with industry-standard log visualization tools
-- **Backwards Compatible**: Works alongside existing RoadRunner logging infrastructure
-
-## Quick Start
-
-Get up and running with FateWeaver in just a few lines of code:
+## Quick start
 
 === "Kotlin"
 
@@ -71,19 +66,19 @@ Get up and running with FateWeaver in just a few lines of code:
     }
     ```
 
-## What Makes FateWeaver Special?
+## The schema system
 
-### Intelligent Schema System
-FateWeaver automatically generates optimized schemas for your data types, with support for:
+Most of the time you never write a schema. FateWeaver infers one from the type you hand it:
 
-- **Primitive types** (Int, Long, Double, String, Boolean)
-- **Collections** (Arrays, Lists)
-- **Enums** with efficient ordinal encoding
-- **Custom classes** via reflection or manual definition
-- **Polymorphic types** with AS_TYPE annotation support
+- Int, Long, Double, String, Boolean
+- Arrays, lists, sets and maps
+- Enums, encoded as a 4-byte ordinal
+- Your own classes, by reflection over their public properties
+- Classes with an `AS_TYPE` constant, which get that name recorded in the log
 
-### Advanced Serialization Control
-Take full control of how your data is serialized:
+### Writing a schema by hand
+
+When you care about the exact bytes, say so:
 
 ```kotlin
 val optimizedSchema = CustomStructSchema<SensorReading>(
@@ -100,34 +95,31 @@ val optimizedSchema = CustomStructSchema<SensorReading>(
 )
 ```
 
-### Global Schema Registry
-Register schemas once, use them everywhere:
+### The schema registry
+
+Register a schema once and every later channel for that class picks it up:
 
 ```kotlin
 // Register once during initialization
 FateSchema.registerSchema<Pose2d>(customPoseSchema)
 
-// Use automatically across your entire codebase
+// Every channel built from Pose2d now uses it
 val poseChannel = FlightRecorder.createChannel("Robot/Pose", Pose2d::class.java)
-// Automatically uses your custom schema!
 ```
 
-## Getting Started
+## Where to next
 
-Ready to enhance your robot's data logging capabilities?
+1. [Installation](installation.md) - add FateWeaver to your FTC project
+2. [Getting started](getting-started.md) - your first logging OpMode
+3. [Schema system](schemas.md) - how types become bytes
+4. [Log management](log-management.md) - downloading and viewing your data
 
-1. [**Installation**](installation.md) - Add FateWeaver to your FTC project
-2. [**Getting Started**](getting-started.md) - Your first logging implementation
-3. [**API Reference**](api-reference.md) - Complete API documentation
-4. [**Schema System**](schemas.md) - Understanding FateWeaver's type system
-5. [**Log Management**](log-management.md) - Downloading and viewing your data
+## Links
 
-## Community & Support
-
-- **Documentation**: [API JavaDocs](https://javadoc.io/doc/gay.zharel.fateweaver/ftc/latest/)
-- **Source Code**: [GitHub Repository](https://github.com/hermesftc/fateweaver/)
-- **Issues & Features**: [GitHub Issues](https://github.com/hermesftc/fateweaver/issues)
-- **Community**: [Discord](https://discord.gg/49C5epU22h)
+- [API JavaDocs](https://javadoc.io/doc/gay.zharel.fateweaver/ftc/latest/)
+- [GitHub](https://github.com/hermesftc/fateweaver/)
+- [Issues](https://github.com/hermesftc/fateweaver/issues)
+- [Discord](https://discord.gg/49C5epU22h)
 
 ---
 

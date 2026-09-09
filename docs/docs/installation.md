@@ -2,16 +2,16 @@
 
 FateWeaver is distributed through Maven Central, making it easy to add to any FTC project.
 
-### Finding the Latest Version
+### Finding the latest version
 
 ![Maven Central Version](https://img.shields.io/maven-central/v/gay.zharel.fateweaver/ftc?style=for-the-badge&label=Latest%20Version)
 
 !!! tip "Version Selection"
     Replace `VERSION` with the latest version shown in the badge above, **without** the `v` prefix. For example, if the badge shows `v0.3.2`, use `0.3.2` in your dependency declaration.
 
-## FTC Project Integration
+## FTC project integration
 
-### Standard FTC Project Structure
+### Standard FTC project structure
 
 If you're using the standard FTC Robot Controller project structure, add the dependency to your `TeamCode/build.gradle` file:
 
@@ -41,7 +41,7 @@ If you're using the standard FTC Robot Controller project structure, add the dep
     }
     ```
 
-### RoadRunner Compatibility
+### RoadRunner compatibility
 
 FateWeaver is backwards compatible with RoadRunner's FlightRecorder API. 
 If you're using RoadRunner, add the dependency to your `build.gradle` file:
@@ -52,14 +52,14 @@ dependencies {
 }
 ```
 
-Simply replace any imports for `com.acmerobotics.roadrunner.ftc.FlightRecorder` and replace them with 
+Then swap any `com.acmerobotics.roadrunner.ftc.FlightRecorder` import for
 `gay.zharel.fateweaver.FlightRecorder`.
 
 ## Verification
 
-After adding the dependency, verify your installation by creating a simple test:
+Drop this OpMode in and run it. If it initializes without throwing, the dependency resolved:
 
-### Test Installation
+### Test installation
 
 Create a simple OpMode to verify FateWeaver is working:
 
@@ -83,14 +83,14 @@ public class FateWeaverTest extends OpMode {
 }
 ```
 
-### Import Errors
+### Import errors
 
 If you see import errors, ensure your IDE has refreshed the Gradle project:
 
 - **Android Studio**: Click "Sync Project with Gradle Files"
 - **IntelliJ IDEA**: Click the Gradle refresh button or use `Ctrl+Shift+O` (Cmd+Shift+O on Mac)
 
-### Getting Help
+### Getting help
 
 If you're still having issues:
 
@@ -98,9 +98,8 @@ If you're still having issues:
 2. Verify you're using a [supported version](#requirements)
 3. Create a [new issue](https://github.com/hermesftc/fateweaver/issues/new) with your build configuration
 
-## Next Steps
+## Next steps
 
-Now that FateWeaver is installed, you're ready to start logging! Continue to:
-
-- [**Getting Started**](getting-started.md) - Learn the basics of FateWeaver logging
-- [**API Reference**](api-reference.md) - Explore the complete API
+- [Getting started](getting-started.md) - your first logging OpMode
+- [Schema system](schemas.md) - how types become bytes
+- [API JavaDocs](https://javadoc.io/doc/gay.zharel.fateweaver/ftc/latest/)

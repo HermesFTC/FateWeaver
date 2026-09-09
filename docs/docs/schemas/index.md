@@ -1,17 +1,15 @@
-# Schema System
+# Schema system
 
-FateWeaver's schema system is the foundation that enables type-safe, efficient serialization of your robot data. Understanding schemas will help you optimize your logging and handle complex data structures effectively.
+A schema describes how one type becomes bytes. FateWeaver writes the schema into the log ahead of
+the data, so a reader can decode the file without knowing anything about your code.
 
-## What are Schemas?
+## What are schemas?
 
-A **schema** defines how FateWeaver serializes and deserializes objects of a specific type. Each schema:
+Every channel has exactly one schema, and that schema fixes the channel's layout for the life of
+the log. It gives you the field names and types a viewer needs, and it makes a type mismatch a
+compile error rather than a plot that looks wrong three matches later.
 
-- Describes the structure of your data
-- Provides efficient binary encoding/decoding
-- Embeds metadata for compatibility with visualization tools
-- Ensures type safety at compile time
-
-## Schema Types Overview
+## Schema types overview
 
 FateWeaver provides several categories of schemas:
 
@@ -37,7 +35,7 @@ graph TD
     D --> D4[TranslatedSchema]
 ```
 
-## Quick Links
+## Quick links
 
 - **[Collection Schemas](collection-schemas.md)** - Arrays, maps and enums
 - **[Schema Registry](registry.md)** - Global schema management and reuse

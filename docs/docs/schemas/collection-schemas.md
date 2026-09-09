@@ -1,4 +1,4 @@
-# Collection Schemas
+# Collection schemas
 
 FateWeaver encodes three shapes of collection: arrays, maps, and enums.
 
@@ -64,9 +64,9 @@ encoded by their own nested schemas. Keys are not restricted to strings.
 
 ## Logging a collection without declaring a channel
 
-`write(channelName, value)` creates a channel on first use. A value's runtime class carries no type
-arguments — a `Map<String, Double>` is just a `LinkedHashMap` at runtime — so from Kotlin this form
-infers from the **static type at the call site**:
+`write(channelName, value)` creates a channel on first use. At runtime a `Map<String, Double>` is
+just a `LinkedHashMap`, with the key and value types gone, so from Kotlin this form reads the static
+type at the call site instead:
 
 === "Kotlin"
 
@@ -90,16 +90,17 @@ infers from the **static type at the call site**:
     powers.put(sample);
     ```
 
-Two limits follow from this being *static* type information:
+Because this reads the static type, two things still won't work.
 
-- If the static type is `Any` or another type with no arguments, inference falls back to the runtime
-  class, exactly as it did before. `val v: Any = mapOf(...)` therefore still fails — the
-  parameterization is genuinely gone by then.
-- A channel's schema is fixed when the channel is created. Writing `Map<String, Double>` and then
-  `Map<String, Int>` to the same channel name is rejected with an error naming both types.
+If the static type is `Any`, or anything else without type arguments, inference falls back to the
+runtime class. So `val v: Any = mapOf(...)` still fails. By that point the key and value types are
+gone for good, and guessing them from the first entry would bake one sample's shape into the channel
+forever.
 
-The same API exists on `FateLogWriter` for non-FTC use, with the extension imported from
-`gay.zharel.fateweaver.log`.
+A channel's schema is also fixed once the channel exists. Write `Map<String, Double>` and then
+`Map<String, Int>` under the same name and the second call throws, naming both types.
+
+`FateLogWriter` has the same API outside FTC. Import the extension from `gay.zharel.fateweaver.log`.
 
 ## Requirements
 
@@ -107,14 +108,14 @@ The format is fixed-shape, so collections must be homogeneous and fully typed:
 
 - `Map<String, Any>`, `List<*>` and raw types are rejected when the schema is built, with an error
   naming the offending field and type.
-- Nullable element, key or value types (`List<String?>`, `Map<String, Double?>`) are rejected — there
-  is no encoding for null.
-- Type arguments must be concrete. A generic holder such as `class Box<T>(val items: List<T>)` cannot
-  be inferred; register a schema for the concrete type instead.
+- Nullable element, key or value types (`List<String?>`, `Map<String, Double?>`) are rejected. The
+  format has no encoding for null.
+- Type arguments must be concrete. A generic holder like `class Box<T>(val items: List<T>)` can't be
+  inferred; register a schema for the concrete type instead.
 
-When inference can't help — a heterogeneous map, or a type you don't control — construct the schema
-by hand with `CustomStructSchema`, or register one for the class with `FateSchema.registerSchema`.
-An explicitly registered schema always wins over inference.
+For a heterogeneous map, or a type you don't control, inference is a dead end. Build the schema by
+hand with `CustomStructSchema`, or register one for the class with `FateSchema.registerSchema`. A
+registered schema always beats inference.
 
 !!! warning "Decoder compatibility"
     `MapSchema` uses schema tag 8, added after the initial format release. Because log entries are

@@ -1,10 +1,10 @@
-# Getting Started
+# Getting started
 
-This guide will walk you through your first FateWeaver implementation, from basic logging to more advanced features. By the end, you'll have a solid understanding of how to integrate FateWeaver into your FTC robot code.
+From one logged timestamp to custom classes and downsampling.
 
-## Your First Log
+## Your first log
 
-Let's start with the simplest possible example - logging a timestamp:
+The smallest thing worth writing, a timestamp:
 
 === "Kotlin"
 
@@ -46,12 +46,11 @@ Let's start with the simplest possible example - logging a timestamp:
     }
     ```
 
-!!! success "That's it!"
-    You're now logging data with FateWeaver! Every call to `timestampChannel.put()` writes a timestamped entry to your log file.
+Every `put` appends one entry to the log file. Nothing else is needed to start.
 
-## Logging Robot Data
+## Logging robot data
 
-Let's expand to log some actual robot data. Here's how to log motor positions and sensor values:
+Motor positions and sensor readings work the same way, one channel each:
 
 === "Kotlin"
 
@@ -154,9 +153,10 @@ Let's expand to log some actual robot data. Here's how to log motor positions an
     }
     ```
 
-## Channel Naming Convention
+## Channel naming convention
 
-Notice the hierarchical naming in the example above (`Motors/Left/Position`, `Sensors/Gyro/Heading`). This creates a organized structure in AdvantageScope:
+Slashes in a channel name become folders in AdvantageScope, which is why the example above uses
+`Motors/Left/Position` rather than `leftMotorPosition`:
 
 ```
 📁 Motors
@@ -169,15 +169,14 @@ Notice the hierarchical naming in the example above (`Motors/Left/Position`, `Se
     📊 Heading
 ```
 
-!!! tip "Naming Best Practices"
-    - Use forward slashes (`/`) to create folders
-    - Start with broad categories (`Motors`, `Sensors`, `Robot`)
-    - Be specific but concise (`Position` not `CurrentEncoderPosition`)
-    - Use consistent casing (PascalCase recommended)
+Start with a broad category (`Motors`, `Sensors`, `Robot`) and get specific from there. Keep the
+leaf short, since the folders already carry the context: `Position` reads better than
+`CurrentEncoderPosition` when it already sits under `Motors/Left`. Pick one casing and stick to it,
+because the tree sorts as text.
 
-## Logging Complex Objects
+## Logging complex objects
 
-FateWeaver shines when logging complex data structures. Let's log a `Pose2d` object:
+Whole objects go into a channel as easily as doubles do. Here's a `Pose2d`:
 
 === "Kotlin"
 
@@ -253,12 +252,13 @@ FateWeaver shines when logging complex data structures. Let's log a `Pose2d` obj
     }
     ```
 
-!!! info "Automatic Schema Generation"
-    FateWeaver uses reflection to automatically create schemas for complex objects. No manual configuration needed!
+!!! info "No schema needed"
+    Hand `createChannel` a class and FateWeaver reflects over its public properties to build the
+    schema. You only write one yourself when you want different bytes than that produces.
 
-## Custom Data Classes
+## Custom data classes
 
-You can also log your own custom classes:
+Your own classes work the same way. Group the values you always want at one timestamp:
 
 === "Kotlin"
 
@@ -345,50 +345,51 @@ You can also log your own custom classes:
     }
     ```
 
-## Performance Considerations
+## Performance considerations
 
 ### Downsampling
 
-For high-frequency data that doesn't need to be logged every loop, use downsampling:
+A loop running at 50 Hz doesn't need every channel written 50 times a second. `downsample` wraps a
+channel with a minimum period in nanoseconds and drops writes that arrive too soon:
 
 ```kotlin
 class DownsampledLoggingOpMode : OpMode() {
     private lateinit var fastChannel: FlightLogChannel<Double>
-    private lateinit var slowChannel: DownsampledWriter<Pose2d>
+    private lateinit var slowChannel: DownsampledChannel<Pose2d>
 
     override fun init() {
         fastChannel = FlightRecorder.createChannel("FastData", DoubleSchema.INSTANCE)
 
         val poseChannel = FlightRecorder.createChannel("Robot/Pose", Pose2d::class.java)
-        slowChannel = poseChannel.downsample(100_000_000) // Log every 100ms
+        slowChannel = poseChannel.downsample(100_000_000) // at most every 100ms
     }
 
     override fun loop() {
-        // This logs every loop cycle
+        // Every loop cycle
         fastChannel.put(System.nanoTime() / 1e9)
 
-        // This logs at most every 100ms
-        slowChannel.write(getCurrentPose())
+        // At most ten times a second; the rest are dropped
+        slowChannel.put(getCurrentPose())
     }
 }
 ```
 
-### Batch Operations
+### Group values you always log together
 
-For multiple related values, consider using a single custom class instead of multiple channels:
+Every message entry carries 8 bytes of overhead, a 4-byte entry type and a 4-byte channel index,
+before any of your data. Three separate double channels written each loop cost 3 × (8 + 8) = 48
+bytes. The same three doubles in one class cost 8 + 24 = 32.
 
-!!! success "Efficient"
-    ```kotlin
-    data class SensorData(val gyro: Double, val accel: Double, val voltage: Double)
-    val sensorChannel = FlightRecorder.createChannel("Sensors", SensorData::class.java)
-    ```
+```kotlin
+// One channel, one entry per loop
+data class SensorData(val gyro: Double, val accel: Double, val voltage: Double)
+val sensorChannel = FlightRecorder.createChannel("Sensors", SensorData::class.java)
 
-!!! warning "Less Efficient"
-    ```kotlin
-    val gyroChannel = FlightRecorder.createChannel("Gyro", DoubleSchema.INSTANCE)
-    val accelChannel = FlightRecorder.createChannel("Accel", DoubleSchema.INSTANCE)
-    val voltageChannel = FlightRecorder.createChannel("Voltage", DoubleSchema.INSTANCE)
-    ```
+// Three channels, three entries per loop
+val gyroChannel = FlightRecorder.createChannel("Gyro", DoubleSchema.INSTANCE)
+val accelChannel = FlightRecorder.createChannel("Accel", DoubleSchema.INSTANCE)
+val voltageChannel = FlightRecorder.createChannel("Voltage", DoubleSchema.INSTANCE)
+```
 
-!!! tip "Start Simple"
-    Begin with basic logging and gradually add more complex features as your needs grow. FateWeaver is designed to scale with your team's expertise!
+The tradeoff is granularity. Separate channels are easier to plot on their own and easier to
+downsample independently, so only group values you genuinely always want at the same timestamp.
