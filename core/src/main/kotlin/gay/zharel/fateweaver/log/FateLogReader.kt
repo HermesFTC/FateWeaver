@@ -52,6 +52,7 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
 
     private val channels = mutableListOf<ChannelInfo>()
     private var headerRead = false
+    private var version: Short = VERSION
     private var nextEntry: FateLogEntry? = null
     private var hasNextCached = false
 
@@ -76,9 +77,11 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
             throw IllegalArgumentException("Invalid log file: wrong magic bytes. Expected '$MAGIC', got '$magic'")
         }
 
-        val version = ByteBuffer.wrap(headerBytes, 2, 2).short
-        if (version != VERSION) {
-            throw IllegalArgumentException("Unsupported log version: $version. Expected: $VERSION")
+        version = ByteBuffer.wrap(headerBytes, 2, 2).short
+        if (version !in SUPPORTED_VERSIONS) {
+            throw IllegalArgumentException(
+                "Unsupported log version: $version. Supported: ${SUPPORTED_VERSIONS.sorted().joinToString(", ")}"
+            )
         }
 
         headerRead = true
@@ -119,6 +122,10 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
                 1 -> readMessageEntry()
                 else -> throw IllegalArgumentException("Unknown entry type: $entryType")
             }
+        } catch (e: IllegalArgumentException) {
+            // A malformed entry is not the same as a truncated one: entries are not
+            // length-prefixed, so everything after it would be misread. Surface it.
+            throw e
         } catch (_: Exception) {
             return null // End of file or error
         }
@@ -158,10 +165,24 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
             FateSchema.TypeRegistry.BOOLEAN.value -> BooleanSchema
             FateSchema.TypeRegistry.ENUM.value -> readEnumSchema()
             FateSchema.TypeRegistry.ARRAY.value -> readArraySchema()
-            FateSchema.TypeRegistry.MAP.value -> readMapSchema()
-            FateSchema.TypeRegistry.OPTIONAL.value -> readOptionalSchema()
+            FateSchema.TypeRegistry.MAP.value -> requireVersion2(tag, "MAP") { readMapSchema() }
+            FateSchema.TypeRegistry.OPTIONAL.value -> requireVersion2(tag, "OPTIONAL") { readOptionalSchema() }
             else -> throw IllegalArgumentException("Unknown schema tag: $tag")
         }
+    }
+
+    /**
+     * Rejects a schema tag introduced after the header version claims to support it. A version 1
+     * header promises only tags 0-7, so a MAP or OPTIONAL tag there means the stream is misaligned
+     * or the header is wrong, and decoding further would produce garbage.
+     */
+    private fun <T> requireVersion2(tag: Int, name: String, read: () -> T): T {
+        if (version < 2) {
+            throw IllegalArgumentException(
+                "Schema tag $tag ($name) requires log version 2, but the header declares version $version"
+            )
+        }
+        return read()
     }
 
     private fun readEnumSchema(): DynamicEnumSchema {
@@ -416,9 +437,6 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
     }
 
     companion object Companion {
-        private const val MAGIC = "RR"
-        private const val VERSION: Short = 1
-
         /**
          * Creates a LogReader for the given file.
          */

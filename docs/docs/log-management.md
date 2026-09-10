@@ -20,14 +20,13 @@ way for your platform.
 
 ### Opening FateWeaver logs
 
-`File` → `Open Log File`, pick your `.wpilog`, and wait for the parse. Your channels show up in the
-data tree on the left.
+`File` → `Open Log(s)...`, pick your `.fate` file, and wait for the parse. Your channels show up in
+the data tree on the left.
 
-!!! warning "Map channels need an up-to-date decoder"
-    Map channels use schema tag 8, which was added after the initial format release. Log entries are
-    not length-prefixed, so a decoder that doesn't recognize the tag cannot skip past it and will
-    stop reading at that point. The log looks truncated instead of reporting an error, which is the
-    worse failure. Check that your viewer supports MAP before logging map channels.
+!!! warning "Requires AdvantageScope with FateWeaver v2 support"
+    Logs are written with format version 2, which added the MAP and OPTIONAL schema tags. An older
+    AdvantageScope rejects the file outright with an unsupported-version message rather than
+    half-reading it. Older `.fate.log` files still open, since version 1 remains readable.
 
 ### Working with the data
 

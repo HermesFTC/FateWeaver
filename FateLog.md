@@ -1,4 +1,4 @@
-# FateWeaver Log File Format Specification, Version 1
+# FateWeaver Log File Format Specification, Version 2
 
 A compact binary logging format designed for high‑speed, low‑overhead recording and offline analysis of structured telemetry produced by FateWeaver. This document describes the format implemented by the core module reader/writer APIs.
 
@@ -73,11 +73,11 @@ This model supports heterogeneous logging scenarios where different subsystems l
 The file begins with exactly 4 bytes:
 
 - 2‑byte ASCII magic string: "RR"
-- 2‑byte unsigned version number (as a 16‑bit short). Current version: 1
+- 2‑byte unsigned version number (as a 16‑bit short). Current version: 2
 
-If either the magic or the version does not match, the file must be rejected.
+If the magic does not match, or the version is one the reader does not implement, the file must be rejected.
 
-Example header bytes (hex): 52 52 00 01
+Example header bytes (hex): 52 52 00 02
 
 ## Entries
 
@@ -117,8 +117,10 @@ All schemas begin with a 4‑byte type tag (int) defined by the TypeRegistry:
 - 5 = BOOLEAN (single byte, 0x00 = false, 0x01 = true)
 - 6 = ENUM (ordinal‑encoded with declared constant names)
 - 7 = ARRAY (homogeneous array)
-- 8 = MAP (key/value mapping with independently typed keys and values)
-- 9 = OPTIONAL (a value that may be absent)
+- 8 = MAP (key/value mapping with independently typed keys and values) — version 2 and later
+- 9 = OPTIONAL (a value that may be absent) — version 2 and later
+
+Tags 0–7 are shared with the Road Runner FTC log format and are byte‑compatible with it. Tags 8 and 9 are FateWeaver additions and may only appear in a version 2 or later log; a reader that finds one under a version 1 header must reject the file rather than continue.
 
 The schema payload that follows the tag depends on the tag value:
 
@@ -196,17 +198,27 @@ All numbers are big‑endian.
 
 ## Versioning
 
-- Header version is a 16‑bit integer. Current version is 1.
-- Readers must reject files with unsupported versions.
+- Header version is a 16‑bit integer. Current version is 2.
+- Readers must reject files with unsupported versions; unsupported versions may have incompatible schema tags or entry formats and readers may not know how to skip unknown entries.
 - Schema tags (TypeRegistry values) are stable and part of the wire contract.
-- New schema tags are added additively, without a version bump. Because entries are not length‑prefixed, a reader that encounters an unknown schema tag cannot skip it: the tag desynchronizes the remainder of the stream, not just the offending channel. Third‑party decoders should therefore be updated *before* logs using a new tag are produced. MAP (tag 8) was added this way, so files using it are unreadable by decoders predating it despite still declaring header version 1.
+- Both schema additions and changes will cause version updates.
+
+### Changelog
+
+- Initial Version (0): 
+  - Basic schema types (INT, LONG, DOUBLE, STRING, BOOLEAN, ENUM, ARRAY, CUSTOM)
+  - Channel declaration and message entries
+- Version 1:
+  - Removes unnecessary zero bytes from array schema entries
+- Version 2:
+  - Adds MAP and OPTIONAL schema tags
 
 ## Examples
 
 Below are illustrative, not exhaustive, and omit some lengths for brevity. All ints are big‑endian.
 
 1) Header
-   - Magic "RR" + version 1 → 52 52 00 01
+   - Magic "RR" + version 2 → 52 52 00 02
 
 2) Declare a channel named "poses" with schema: ARRAY of CUSTOM with fields { x: DOUBLE, y: DOUBLE }
    - Entry kind: 00 00 00 00

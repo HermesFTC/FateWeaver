@@ -6,7 +6,7 @@ import org.firstinspires.ftc.robotcore.internal.system.AppUtil
 import java.text.SimpleDateFormat
 
 val LOG_ROOT = AppUtil.ROOT_FOLDER.resolve("FateWeaver/Logs")
-const val EXT = ".fate.log"
+const val EXT = ".fate"
 
 @SuppressLint("SimpleDateFormat")
 private val DATE_FORMAT = SimpleDateFormat("yyyy_MM_dd__HH_mm_ss_SSS")
@@ -29,5 +29,5 @@ object FateLogManager {
     }
 
     fun startWithTimestamp(fileName: String): FateLogWriter =
-        start("${DATE_FORMAT.format(System.currentTimeMillis())}__$fileName$EXT")
+        start("${DATE_FORMAT.format(System.currentTimeMillis())}__$fileName")
 }

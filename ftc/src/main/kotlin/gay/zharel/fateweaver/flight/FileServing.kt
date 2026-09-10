@@ -57,7 +57,7 @@ object FateDashboard {
             }
 
             get("/fate/logs/list") { _, res ->
-                val files = LOG_ROOT.listFiles()?.filter { it.isFile && it.name.endsWith(".log") } ?: emptyList()
+                val files = LOG_ROOT.listFiles()?.filter { it.isFile && it.name.endsWith(EXT) } ?: emptyList()
                 val sorted = files.sortedByDescending { it.lastModified() }
                 val jsonItems = sorted.map { f ->
                     val name = f.name
@@ -71,8 +71,8 @@ object FateDashboard {
             get("/fate/logs/download") { req, res ->
                 val fileName = req.query("file") ?: return@get res.badRequest("Missing 'file' parameter")
                 
-                // Security: disallow path traversal and restrict to .log files
-                if (fileName.contains("/") || fileName.contains("\\") || !fileName.endsWith(".log")) {
+                // Security: disallow path traversal and restrict to log files
+                if (fileName.contains("/") || fileName.contains("\\") || !fileName.endsWith(EXT)) {
                     return@get res.forbidden("Invalid file name")
                 }
                 

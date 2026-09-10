@@ -12,8 +12,13 @@ import kotlin.reflect.typeOf
 /** Magic bytes that identify a FateWeaver log file. */
 const val MAGIC = "RR"
 
-/** Version number of the FateWeaver log file format. */
-const val VERSION: Short = 1
+/**
+ * Version number written into the header of new FateWeaver logs.
+ */
+const val VERSION: Short = 2
+
+/** Header versions this library can read. */
+val SUPPORTED_VERSIONS: Set<Short> = setOf(1, 2)
 
 /**
  * A named stream of typed data within a FateWeaver log.
