@@ -1,0 +1,57 @@
+[project]
+site_name = "FateWeaver Docs"
+site_url = "https://fate.zharel.gay/"
+
+repo_url = "https://github.com/hermesftc/fateweaver"
+repo_name = "FateWeaver on GitHub"
+
+nav = [
+  { "Home" = "index.md" },
+  { "Installation" = "installation.md" },
+  { "Getting started" = "getting-started.md" },
+  { "Log management" = "log-management.md" },
+  { "Schemas" = [
+    { "Overview" = "schemas/index.md" },
+    { "Reference" = "schemas/reference.md" },
+    { "Collection schemas" = "schemas/collection-schemas.md" },
+    { "Registry" = "schemas/registry.md" },
+    { "Selection guide" = "schemas/guide.md" },
+  ] },
+]
+
+[project.theme]
+variant = "modern"
+language = "en"
+logo = "assets/logo.png"
+favicon = "assets/favicon.png"
+features = [
+  "content.code.copy",
+  "content.tabs.link",
+  "navigation.footer",
+  "navigation.top",
+  "search.highlight",
+]
+
+[project.theme.icon]
+repo = "fontawesome/brands/github"
+
+[[project.theme.palette]]
+scheme = "slate"
+primary = "cyan"
+accent = "cyan"
+
+[project.plugins.social]
+enabled = true
+
+[project.markdown_extensions]
+admonition = {}
+pymdownx.details = {}
+pymdownx.highlight.anchor_linenums = true
+pymdownx.highlight.line_spans = "__span"
+pymdownx.highlight.pygments_lang_class = true
+pymdownx.inlinehilite = {}
+pymdownx.snippets = {}
+pymdownx.superfences.custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+]
+pymdownx.tabbed.alternate_style = true

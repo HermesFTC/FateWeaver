@@ -1,0 +1,12 @@
+[project]
+name = "docs"
+version = "0.1.0"
+description = "Add your description here"
+readme = "../README.md"
+authors = [
+    { name = "Zach Harel", email = "zach@zharel.me" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "zensical>=0.0.69",
+]

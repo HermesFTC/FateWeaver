@@ -108,11 +108,11 @@ If you see import errors, make sure your IDE has refreshed the Gradle project:
 If you still have issues:
 
 1. Check the [GitHub Issues](https://github.com/hermesftc/fateweaver/issues) for similar problems.
-2. Verify you are using a [supported version](#requirements).
+2. Verify you are using the [latest version](#finding-the-latest-version).
 3. Create a [new issue](https://github.com/hermesftc/fateweaver/issues/new) with your build configuration.
 
 ## Next steps
 
 - [Getting started](getting-started.md) walks through your first logging OpMode.
-- [Schema system](schemas.md) explains how types become bytes.
+- [Schema system](schemas/index.md) explains how types become bytes.
 - [API JavaDocs](https://javadoc.io/doc/gay.zharel.fateweaver/ftc/latest/)

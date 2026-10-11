@@ -50,3 +50,4 @@ bin/
 /ftc/src/main/assets/web/fate/
 
 docs/.cache/*
+docs/site/

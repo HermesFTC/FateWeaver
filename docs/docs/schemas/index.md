@@ -39,6 +39,7 @@ graph TD
 
 ## Quick links
 
+- **[Schema Reference](reference.md)**: Every schema type with examples
 - **[Collection Schemas](collection-schemas.md)**: Arrays, maps, enums and optionals
 - **[Schema Registry](registry.md)**: Global schema management and reuse
 - **[Selection Guide](guide.md)**: Performance tips and best practices

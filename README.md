@@ -144,7 +144,7 @@ manager.route {
 
 - [Installation](docs/docs/installation.md)
 - [Getting started](docs/docs/getting-started.md)
-- [Schemas](docs/docs/schemas.md)
+- [Schemas](docs/docs/schemas/index.md)
 - [Log management](docs/docs/log-management.md)
 
 ## Development

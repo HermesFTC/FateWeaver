@@ -109,7 +109,7 @@ Fate.log("Robot/Pose", drive.pose)
 
 1. [Installation](installation.md) adds FateWeaver to your FTC project.
 2. [Getting started](getting-started.md) walks through your first logging OpMode.
-3. [Schema system](schemas.md) explains how types become bytes.
+3. [Schema system](schemas/index.md) explains how types become bytes.
 4. [Log management](log-management.md) covers downloading and viewing your data.
 
 ## Links

@@ -1,7 +1,9 @@
-# Schema system
+# Schema reference
 
-A schema describes how one type becomes bytes. FateWeaver writes the schema into the log ahead of
-the data, so a reader can decode the file without knowing anything about your code.
+Every schema type with examples, in one page. See the [schema system overview](index.md) for how
+schemas fit together. A schema describes how one type becomes bytes. FateWeaver writes the schema
+into the log ahead of the data, so a reader can decode the file without knowing anything about
+your code.
 
 ## What are schemas?
 
@@ -669,7 +671,7 @@ in it.
 ## Schema registry
 
 The registry maps a class to the schema used for it everywhere. See the
-[registry page](schemas/registry.md) for more.
+[registry page](registry.md) for more.
 
 ### Automatic registration
 
