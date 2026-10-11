@@ -39,10 +39,22 @@ class FateRegistry @JvmOverloads constructor(
     /** Stamps every logged value. Defaults to [TimeSource.Monotonic]. */
     val timeSource: TimeSource = TimeSource.Monotonic
 ) {
-    private val origin = timeSource.markNow()
+    @Volatile
+    private var origin = timeSource.markNow()
 
-    /** Nanoseconds elapsed on [timeSource] since this registry was created. */
+    /** Nanoseconds elapsed on [timeSource] since this registry was created, or last restarted. */
     internal fun timestamp(): Long = origin.elapsedNow().inWholeNanoseconds
+
+    /**
+     * Makes the next timestamp count from zero again.
+     *
+     * Call this when a new log begins, so its first message is stamped near zero rather than with
+     * however long the program has been running. Values logged before and after a restart share no
+     * common origin, so don't restart while one log is still open.
+     */
+    fun restartClock() {
+        origin = timeSource.markNow()
+    }
 
     private val backends = CopyOnWriteArrayList<FateBackend>()
 

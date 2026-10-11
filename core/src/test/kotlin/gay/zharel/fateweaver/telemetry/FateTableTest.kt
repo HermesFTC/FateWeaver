@@ -97,6 +97,20 @@ class FateTableTest {
     }
 
     @Test
+    fun `restarting the clock counts from zero again`() {
+        val env = Env()
+        val table = env.registry.table("T")
+
+        env.time += 50.milliseconds
+        table.log("v", 1.0)
+        env.registry.restartClock()
+        env.time += 3.milliseconds
+        table.log("v", 2.0)
+
+        assertEquals(listOf(50_000_000L, 3_000_000L), env.mock.records.map { it.timestamp })
+    }
+
+    @Test
     fun `reified log keeps type arguments`() {
         val env = Env()
         env.registry.table("Motors").log("powers", mapOf("fl" to 0.5, "fr" to -0.5))

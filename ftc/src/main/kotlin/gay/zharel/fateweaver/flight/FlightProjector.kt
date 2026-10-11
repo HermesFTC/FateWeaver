@@ -34,7 +34,7 @@ private const val TAG = "FlightProjector"
  * the toggle on the FateWeaver dashboard, to close the server and unbind the port; the choice is
  * remembered across robot restarts. See [LiveSettings]. File logging is unaffected either way.
  *
- * @see FlightRecorder.mode
+ * @see FateLogManager.mode
  */
 object FlightProjector : FateSink {
     /** The port [start] binds, chosen to avoid 8080 (FTC web server) and 8000 (FTC Dashboard). */
