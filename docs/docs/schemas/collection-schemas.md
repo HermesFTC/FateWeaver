@@ -5,7 +5,7 @@ FateWeaver encodes three shapes of collection: arrays, maps, and enums.
 ## Arrays, lists and sets
 
 `ArraySchema<T>` writes a 4-byte element count followed by each element encoded with the element
-schema. `List<T>`, `Set<T>` and `Collection<T>` fields use this same wire format, so a `List<Double>`
+schema. `List<T>`, `Set<T>` and `Collection<T>` fields use the same wire format, so a `List<Double>`
 field is byte-identical to a `Double[]` field.
 
 === "Kotlin"
@@ -13,39 +13,38 @@ field is byte-identical to a `Double[]` field.
     ```kotlin
     class Odometry(val wheelPositions: List<Double>)
 
-    // Inferred automatically: wheelPositions becomes an array of DOUBLE
-    val channel = FlightRecorder.createChannel("Odometry", Odometry::class.java)
-    channel.put(Odometry(listOf(0.0, 1.5, 3.0)))
+    // wheelPositions is inferred as an array of DOUBLE
+    Fate.log("Odometry", Odometry(listOf(0.0, 1.5, 3.0)))
     ```
 
 === "Java"
 
     ```java
     ArraySchema<Double> schema = new ArraySchema<>(DoubleSchema.INSTANCE);
-    FlightLogChannel<Double[]> channel = FlightRecorder.createChannel("Wheels", schema);
-    channel.put(new Double[]{0.0, 1.5, 3.0});
+    Fate.log("Wheels", new Double[]{0.0, 1.5, 3.0}, schema);
     ```
 
-Sets are written in their own iteration order, which is stable for `LinkedHashSet` but arbitrary for
-`HashSet`. Order is not meaningful in the log either way.
+Sets are written in their own iteration order. That order is stable for a `LinkedHashSet` and
+arbitrary for a `HashSet`. Either way, it means nothing in the log.
 
 ## Maps
 
-`MapSchema<K, V>` writes a 4-byte entry count followed by each key/value pair, with keys and values
-encoded by their own nested schemas. Keys are not restricted to strings.
+`MapSchema<K, V>` writes a 4-byte entry count followed by each key/value pair. Keys and values are
+encoded by their own nested schemas, and keys don't have to be strings.
 
 === "Kotlin"
 
     ```kotlin
-    val powers = FlightRecorder.createChannel(
-        "Motors/Powers",
+    val motors = Fate.table("Motors")
+    motors.log(
+        "Powers",
+        mapOf("fl" to 0.8, "fr" to 0.6),
         MapSchema(StringSchema.INSTANCE, DoubleSchema.INSTANCE),
     )
-    powers.put(mapOf("fl" to 0.8, "fr" to 0.6))
 
     // Or inferred from a declared field:
-    class Telemetry(val counters: Map<String, Int>)
-    FlightRecorder.createChannel("Telemetry", Telemetry::class.java)
+    class Counters(val counts: Map<String, Int>)
+    Fate.log("Counters", Counters(mapOf("cycles" to 3)))
     ```
 
 === "Java"
@@ -53,59 +52,55 @@ encoded by their own nested schemas. Keys are not restricted to strings.
     ```java
     MapSchema<String, Double> schema =
         new MapSchema<>(StringSchema.INSTANCE, DoubleSchema.INSTANCE);
-    FlightLogChannel<Map<String, Double>> powers =
-        FlightRecorder.createChannel("Motors/Powers", schema);
+    FateTable motors = Fate.table("Motors");
 
     Map<String, Double> sample = new LinkedHashMap<>();
     sample.put("fl", 0.8);
     sample.put("fr", 0.6);
-    powers.put(sample);
+    motors.log("Powers", sample, schema);
     ```
 
-## Logging a collection without declaring a channel
+## Logging a collection without a schema
 
-`write(channelName, value)` creates a channel on first use. At runtime a `Map<String, Double>` is
-just a `LinkedHashMap`, with the key and value types gone, so from Kotlin this form reads the static
-type at the call site instead:
+In Kotlin you can skip the schema. `log` is a reified extension, so it reads the static type at the
+call site, type arguments included. A `Map<String, Double>` is just a `LinkedHashMap` at runtime, so
+without the static type the key and value types would be gone.
 
 === "Kotlin"
 
     ```kotlin
-    import gay.zharel.fateweaver.flight.write   // the reified overload is an extension
+    import gay.zharel.fateweaver.telemetry.Fate
+    import gay.zharel.fateweaver.telemetry.log   // the reified overload is an extension
 
-    FlightRecorder.write("Motors/Powers", mapOf("fl" to 0.8, "fr" to 0.6))
-    FlightRecorder.write("Path/Points", listOf(a, b, c))
-
-    // Or name the type up front:
-    val powers = FlightRecorder.createChannel<Map<String, Double>>("Motors/Powers")
+    Fate.log("Motors/Powers", mapOf("fl" to 0.8, "fr" to 0.6))
+    Fate.log("Path/Points", listOf(a, b, c))
     ```
 
 === "Java"
 
     ```java
-    // Java erases at the call site too, so there is nothing to infer from.
-    // Build the schema explicitly instead:
-    FlightLogChannel<Map<String, Double>> powers = FlightRecorder.createChannel(
-        "Motors/Powers", new MapSchema<>(StringSchema.INSTANCE, DoubleSchema.INSTANCE));
-    powers.put(sample);
+    // Java's two-argument log only sees the runtime class, so it can't log a Map or List.
+    // Pass the schema instead:
+    Fate.log("Motors/Powers", sample,
+        new MapSchema<>(StringSchema.INSTANCE, DoubleSchema.INSTANCE));
     ```
 
-Because this reads the static type, two things still won't work.
+Two cases still fail.
 
 If the static type is `Any`, or anything else without type arguments, inference falls back to the
-runtime class. So `val v: Any = mapOf(...)` still fails. By that point the key and value types are
-gone for good, and guessing them from the first entry would bake one sample's shape into the channel
-forever.
+runtime class. So `val v: Any = mapOf(...)` is rejected. The key and value types are already gone,
+and guessing them from the first entry would lock one sample's shape into the path.
 
-A channel's schema is also fixed once the channel exists. Write `Map<String, Double>` and then
-`Map<String, Int>` under the same name and the second call throws, naming both types.
+A path's schema is also fixed by its first log. Log a `Map<String, Double>` and then a
+`Map<String, Int>` to the same name, and the second call prints a warning and is skipped. The
+warning names both types.
 
-`FateLogWriter` has the same API outside FTC. Import the extension from `gay.zharel.fateweaver.log`.
+`FateLogWriter` has the same API outside FTC. Import its extension from `gay.zharel.fateweaver.log`.
 
 ## Nulls
 
 A nullable type infers an `OptionalSchema`, encoded as a presence byte followed by the value when
-there is one. Nothing about this is opt-in: declaring the property nullable is the whole API.
+there is one. There is nothing to turn on. Declare the property nullable and you are done.
 
 === "Kotlin"
 
@@ -130,33 +125,33 @@ there is one. Nothing about this is opt-in: declaring the property nullable is t
     }
     ```
 
-An absent value costs one byte; a present one costs one byte more than it would unwrapped. Non-null
-fields are unchanged, so this does not make your existing logs any bigger.
+An absent value costs one byte. A present one costs one byte more than it would unwrapped. Non-null
+fields are unchanged, so your existing logs don't get any bigger.
 
-A null in a field that isn't declared nullable is still an error naming the field. That case shows
-up with Java fields and Kotlin platform types, where the declaration says non-null and the value
+A null in a field that isn't declared nullable is still an error that names the field. You will see
+this with Java fields and Kotlin platform types, where the declaration says non-null and the value
 disagrees.
 
 !!! warning "Decoder compatibility"
-    Optional values use schema tag 9. As with maps, a decoder that predates the tag cannot skip past
-    it and will stop reading at the first channel that uses one.
+    Optional values use schema tag 9. A decoder that predates the tag cannot skip past it. It stops
+    reading at the first channel that uses one.
 
 ## Requirements
 
-The format is fixed-shape, so collections must be homogeneous and fully typed:
+The format has a fixed shape, so collections must be homogeneous and fully typed:
 
-- `Map<String, Any>`, `List<*>` and raw types are rejected when the schema is built, with an error
-  naming the offending field and type.
-- Nullable element, key or value types (`List<String?>`, `Map<String, Double?>`) are fine. They
-  infer an `OptionalSchema`, which costs one byte per element.
+- `Map<String, Any>`, `List<*>` and raw types are rejected when the schema is built. The error names
+  the field and type.
+- Nullable element, key or value types such as `List<String?>` and `Map<String, Double?>` are fine.
+  They infer an `OptionalSchema`, which costs one byte per element.
 - Type arguments must be concrete. A generic holder like `class Box<T>(val items: List<T>)` can't be
-  inferred; register a schema for the concrete type instead.
+  inferred. Register a schema for the concrete type instead.
 
-For a heterogeneous map, or a type you don't control, inference is a dead end. Build the schema by
-hand with `CustomStructSchema`, or register one for the class with `FateSchema.registerSchema`. A
+For a heterogeneous map, or a type you don't control, inference won't work. Build the schema by hand
+with `CustomStructSchema`, or register one for the class with `FateSchema.registerSchema`. A
 registered schema always beats inference.
 
 !!! warning "Decoder compatibility"
-    `MapSchema` uses schema tag 8, added after the initial format release. Because log entries are
-    not length-prefixed, a decoder that predates the tag cannot skip it and will stop reading at that
-    point. Update external tooling before producing logs that contain map channels.
+    `MapSchema` uses schema tag 8, which was added after the first release of the format. Log entries
+    are not length-prefixed, so a decoder that predates the tag cannot skip it and stops reading
+    there. Update external tooling before you produce logs that contain maps.

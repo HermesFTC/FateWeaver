@@ -1,5 +1,13 @@
-# Vue 3 + TypeScript + Vite
+# FateWeaver dashboard frontend
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+This is the Vue 3 and TypeScript app behind the web dashboard at `192.168.43.1:8080/fate`. It lists the logs on the Robot Controller and lets you download them.
 
-Learn more about the recommended Project Setup and IDE Support in the [Vue Docs TypeScript Guide](https://vuejs.org/guide/typescript/overview.html#project-setup).
+Gradle builds it for you. The `buildFrontend` task in the `ftc` module runs `bun install` and `bun run build`, and writes the result to `ftc/src/main/assets/web/fate`. That folder is git-ignored, so don't edit it. Install [Bun](https://bun.sh/) before you build.
+
+To work on the app on its own, run this in `frontend/`:
+
+```
+bun run dev
+```
+
+The dev server proxies `/fate/logs` to a Control Hub at `192.168.43.1:8080`. Connect to the robot's WiFi first, or change the target in `vite.config.ts`.

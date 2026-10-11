@@ -1,9 +1,9 @@
 # FateWeaver Log File Format Specification, Version 3
 
-A compact binary logging format designed for high‑speed, low‑overhead recording and offline analysis of structured telemetry produced by FateWeaver. This document describes the format implemented by the core module reader/writer APIs.
+A compact binary format for recording FateWeaver telemetry fast and reading it back offline. This document describes the format the core module reader and writer implement.
 
 ## Motivation
-Robotics and embedded applications generate diverse telemetry at high rates. Text formats (CSV, JSON) have high CPU and I/O overhead and are difficult to decode unambiguously. FateWeaver defines a binary format with explicitly declared per‑channel schemas, enabling:
+Robots produce many kinds of telemetry at high rates. Text formats like CSV and JSON cost a lot of CPU and I/O, and they are hard to decode unambiguously. FateWeaver uses a binary format where each channel declares its schema. This gives:
 
 - Efficient writes and reads with fixed/known sizes
 - Self‑describing streams via schema announcements
@@ -25,7 +25,7 @@ Robotics and embedded applications generate diverse telemetry at high rates. Tex
 
 ## Design Overview
 
-A FateWeaver log is a sequence of entries with no padding between them. This design prioritizes compactness and streaming efficiency while maintaining self-describing capability.
+A FateWeaver log is a sequence of entries with no padding between them. The layout favors small files and streaming, and the log still describes itself.
 
 ### File Structure
 
@@ -35,7 +35,7 @@ The binary format follows a simple linear structure:
 [Header: 4 bytes] [Entry 1] [Entry 2] ... [Entry N]
 ```
 
-Each entry is variable-length and immediately follows the previous entry without alignment padding. This approach maximizes storage efficiency and enables straightforward sequential reading/writing.
+Each entry is variable-length and follows the previous entry directly, with no alignment padding. Files stay small and can be read and written in order.
 
 ### Core Design Principles
 
@@ -56,7 +56,7 @@ Each entry is variable-length and immediately follows the previous entry without
   - 0 = Schema entry (registers a channel and its schema)
   - 1 = Message entry (payload for an existing channel)
 
-The entry type system is designed for extensibility. Future versions may introduce additional entry types (e.g., metadata entries, compression markers) while maintaining backward compatibility through version negotiation.
+A future version may add entry types, such as metadata entries or compression markers. The header version tells a reader which entry types to expect.
 
 ### Channel Model
 
@@ -102,8 +102,8 @@ Multiple channels are allowed; schemas are independent and can be nested.
 
 Carries one payload value for a previously announced channel. Format:
 
-- 4 bytes: channel index (int) — must be a valid index referencing a prior Schema entry
-- 8 bytes: timestamp (long) — version 3 and later only. Nanoseconds on a monotonic clock. The origin is the writer's choice (the reference telemetry API counts from when its registry was created), so only differences between timestamps in the same log mean anything.
+- 4 bytes: channel index (int). It must be a valid index of a prior Schema entry.
+- 8 bytes: timestamp (long). Version 3 and later only. Nanoseconds on a monotonic clock. The writer chooses the origin; the reference telemetry API counts from when its registry was created. Only differences between timestamps in the same log mean anything.
 - Payload bytes: object encoded according to the channel’s schema
 
 Under a version 1 or 2 header the timestamp is absent and the payload follows the channel index directly.
@@ -122,10 +122,10 @@ All schemas begin with a 4‑byte type tag (int) defined by the TypeRegistry:
 - 5 = BOOLEAN (single byte, 0x00 = false, 0x01 = true)
 - 6 = ENUM (ordinal‑encoded with declared constant names)
 - 7 = ARRAY (homogeneous array)
-- 8 = MAP (key/value mapping with independently typed keys and values) — version 2 and later
-- 9 = OPTIONAL (a value that may be absent) — version 2 and later
+- 8 = MAP (key/value mapping with independently typed keys and values), version 2 and later
+- 9 = OPTIONAL (a value that may be absent), version 2 and later
 
-Tags 0–7 are shared with the Road Runner FTC log format and are byte‑compatible with it. Tags 8 and 9 are FateWeaver additions and may only appear in a version 2 or later log; a reader that finds one under a version 1 header must reject the file rather than continue.
+Tags 0 to 7 are shared with the Road Runner FTC log format and are byte‑compatible with it. Tags 8 and 9 are FateWeaver additions and may only appear in a version 2 or later log; a reader that finds one under a version 1 header must reject the file rather than continue.
 
 The schema payload that follows the tag depends on the tag value:
 
@@ -152,7 +152,7 @@ The schema payload that follows the tag depends on the tag value:
   - 4 bytes: entry count N (int)
   - N entries, each: the key encoded with the key schema, immediately followed by the value encoded with the value schema
 
-  Keys may use any schema, not just STRING; enum, array and CUSTOM keys are all legal. Entry order is writer‑defined and carries no meaning — every key is written explicitly, so readers must not rely on ordering. Keys are expected to be unique; a reader encountering duplicate keys should not assume the decoded entry count matches N.
+  Keys may use any schema. STRING, enum, array and CUSTOM keys are all legal. Entry order is writer‑defined and carries no meaning, because every key is written explicitly. Readers must not rely on ordering. Keys are expected to be unique; a reader encountering duplicate keys should not assume the decoded entry count matches N.
 
 - OPTIONAL
   - Nested schema bytes for the value type: one complete schema blob (tag + payload)
@@ -164,7 +164,7 @@ The schema payload that follows the tag depends on the tag value:
 
   An absent value occupies exactly one byte. Any presence byte other than 0x00 or 0x01 indicates a corrupt or misaligned stream, and readers should reject it rather than guess.
 
-  OPTIONAL may wrap any schema, including another OPTIONAL, though writers have no reason to nest it. Writers must not emit OPTIONAL for a value that is never absent: doing so is legal but costs a byte per record for nothing.
+  OPTIONAL may wrap any schema, including another OPTIONAL, though writers have no reason to nest it. Writers must not emit OPTIONAL for a value that is never absent. It is legal, but it adds a byte to every record.
 
 - CUSTOM (structured object)
   Represents a structured object with named fields. The schema describes the field layout, and objects are encoded as the concatenation of field values in declaration order.
@@ -222,7 +222,7 @@ All numbers are big‑endian.
 
 ## Examples
 
-Below are illustrative, not exhaustive, and omit some lengths for brevity. All ints are big‑endian.
+These examples are illustrative, not exhaustive, and omit some lengths. All ints are big‑endian.
 
 1) Header
    - Magic "RR" + version 3 → 52 52 00 03

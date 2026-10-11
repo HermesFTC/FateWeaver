@@ -1,26 +1,28 @@
 # Getting started
 
-From one logged timestamp to custom classes and downsampling.
+This page goes from one logged number to your own classes.
 
 ## Your first log
 
-The smallest thing worth writing, a timestamp:
+Log the battery voltage every loop:
 
 === "Kotlin"
 
     ```kotlin
+    import gay.zharel.fateweaver.telemetry.Fate
+    import gay.zharel.fateweaver.telemetry.log
+
     @TeleOp(name = "Basic Logging")
     class BasicLoggingOpMode : OpMode() {
-        private lateinit var timestampChannel: FlightLogChannel<Long>
+        private lateinit var battery: VoltageSensor
 
         override fun init() {
-            timestampChannel = FlightRecorder.createChannel("timestamp", LongSchema.INSTANCE)
-            telemetry.addData("Status", "Ready to log!")
+            battery = hardwareMap.voltageSensor.iterator().next()
         }
 
         override fun loop() {
-            timestampChannel.put(System.nanoTime())
-            telemetry.addData("Logging", "Current time: ${System.nanoTime()}")
+            Fate.log("Battery/Voltage", battery.voltage)
+            telemetry.addData("Voltage", battery.voltage)
         }
     }
     ```
@@ -28,76 +30,90 @@ The smallest thing worth writing, a timestamp:
 === "Java"
 
     ```java
+    import gay.zharel.fateweaver.telemetry.Fate;
+
     @TeleOp(name = "Basic Logging")
     public class BasicLoggingOpMode extends OpMode {
-        private FlightLogChannel<Long> timestampChannel;
+        private VoltageSensor battery;
 
         @Override
         public void init() {
-            timestampChannel = FlightRecorder.createChannel("timestamp", LongSchema.INSTANCE);
-            telemetry.addData("Status", "Ready to log!");
+            battery = hardwareMap.voltageSensor.iterator().next();
         }
 
         @Override
         public void loop() {
-            timestampChannel.put(System.nanoTime());
-            telemetry.addData("Logging", "Current time: " + System.nanoTime());
+            Fate.log("Battery/Voltage", battery.getVoltage());
+            telemetry.addData("Voltage", battery.getVoltage());
         }
     }
     ```
 
-Every `put` appends one entry to the log file. Nothing else is needed to start.
+Each `Fate.log` call appends one value to the log file for the running OpMode, stamped with the time
+you logged it. In Kotlin, import the `log` extension next to `Fate`, or the call will not compile.
+
+You do not create channels or declare anything up front. The first `Fate.log("Battery/Voltage", ...)`
+creates the path, and later calls add values to it.
+
+A path keeps the type of its first value. If you log a `String` to a path that holds `Double`s,
+FateWeaver warns once and skips that value. Logging never throws into your robot code.
+
+## Where the log goes
+
+On a robot, `FateLogManager` runs without any setup from you. It creates a log file for each OpMode
+and routes everything you log through `Fate` into it.
+
+- Files go to the `FateWeaver/Logs` folder on the Robot Controller.
+- Each name starts with a date and time, followed by the OpMode name, and ends in `.fate`.
+- Once the folder passes 250 MB, FateWeaver deletes the oldest logs first.
+- Values you log while no OpMode is running are not recorded.
+- Every log gets an `OpMode/Event` channel with `PRE_INIT`, `PRE_START` and `POST_STOP`.
+
+FateWeaver also streams the log to AdvantageScope over port 8110 while the OpMode runs.
+
+!!! warning "Live streaming is banned at competition"
+    The 2026-2027 FTC manual bans live streaming at competition. Set
+    `FateLogManager.mode = LogMode.FILE` before you compete. Both classes are in
+    `gay.zharel.fateweaver.flight`. The log file is still written.
 
 ## Logging robot data
 
-Motor positions and sensor readings work the same way, one channel each:
+For a group of related values, ask `Fate` for a table once and log into it. Tables are cheap, so
+hold one in a field.
 
 === "Kotlin"
 
     ```kotlin
     @TeleOp(name = "Robot Data Logging")
     class RobotLoggingOpMode : OpMode() {
-        // Hardware
         private lateinit var leftMotor: DcMotor
         private lateinit var rightMotor: DcMotor
         private lateinit var gyro: IMU
 
-        // Log channels
-        private lateinit var leftPosChannel: FlightLogChannel<Int>
-        private lateinit var rightPosChannel: FlightLogChannel<Int>
-        private lateinit var gyroChannel: FlightLogChannel<Double>
+        private val motors = Fate.table("Motors")
+        private val sensors = Fate.table("Sensors")
 
         override fun init() {
-            // Initialize hardware
             leftMotor = hardwareMap.get(DcMotor::class.java, "leftMotor")
             rightMotor = hardwareMap.get(DcMotor::class.java, "rightMotor")
             gyro = hardwareMap.get(IMU::class.java, "imu")
 
-            // Create log channels
-            leftPosChannel = FlightRecorder.createChannel("Motors/Left/Position", IntSchema.INSTANCE)
-            rightPosChannel = FlightRecorder.createChannel("Motors/Right/Position", IntSchema.INSTANCE)
-            gyroChannel = FlightRecorder.createChannel("Sensors/Gyro/Heading", DoubleSchema.INSTANCE)
-
-            telemetry.addData("Status", "Initialized with logging")
+            telemetry.addData("Status", "Initialized")
         }
 
         override fun loop() {
-            // Your regular robot code
             val drive = -gamepad1.left_stick_y.toDouble()
             val turn = gamepad1.right_stick_x.toDouble()
 
             leftMotor.power = drive + turn
             rightMotor.power = drive - turn
 
-            // Log the data
-            leftPosChannel.put(leftMotor.currentPosition)
-            rightPosChannel.put(rightMotor.currentPosition)
-            gyroChannel.put(gyro.robotYawPitchRollAngles.getYaw(AngleUnit.DEGREES))
+            motors.log("Left/Position", leftMotor.currentPosition)
+            motors.log("Right/Position", rightMotor.currentPosition)
+            sensors.log("Gyro/Heading", gyro.robotYawPitchRollAngles.getYaw(AngleUnit.DEGREES))
 
-            // Display current values
             telemetry.addData("Left Position", leftMotor.currentPosition)
             telemetry.addData("Right Position", rightMotor.currentPosition)
-            telemetry.addData("Heading", gyro.robotYawPitchRollAngles.getYaw(AngleUnit.DEGREES))
         }
     }
     ```
@@ -107,95 +123,81 @@ Motor positions and sensor readings work the same way, one channel each:
     ```java
     @TeleOp(name = "Robot Data Logging")
     public class RobotLoggingOpMode extends OpMode {
-        // Hardware
         private DcMotor leftMotor, rightMotor;
         private IMU gyro;
 
-        // Log channels
-        private FlightLogChannel<Integer> leftPosChannel;
-        private FlightLogChannel<Integer> rightPosChannel;
-        private FlightLogChannel<Double> gyroChannel;
+        private final FateTable motors = Fate.table("Motors");
+        private final FateTable sensors = Fate.table("Sensors");
 
         @Override
         public void init() {
-            // Initialize hardware
             leftMotor = hardwareMap.get(DcMotor.class, "leftMotor");
             rightMotor = hardwareMap.get(DcMotor.class, "rightMotor");
             gyro = hardwareMap.get(IMU.class, "imu");
 
-            // Create log channels
-            leftPosChannel = FlightRecorder.createChannel("Motors/Left/Position", IntSchema.INSTANCE);
-            rightPosChannel = FlightRecorder.createChannel("Motors/Right/Position", IntSchema.INSTANCE);
-            gyroChannel = FlightRecorder.createChannel("Sensors/Gyro/Heading", DoubleSchema.INSTANCE);
-
-            telemetry.addData("Status", "Initialized with logging");
+            telemetry.addData("Status", "Initialized");
         }
 
         @Override
         public void loop() {
-            // Your regular robot code
             double drive = -gamepad1.left_stick_y;
             double turn = gamepad1.right_stick_x;
 
             leftMotor.setPower(drive + turn);
             rightMotor.setPower(drive - turn);
 
-            // Log the data
-            leftPosChannel.put(leftMotor.getCurrentPosition());
-            rightPosChannel.put(rightMotor.getCurrentPosition());
-            gyroChannel.put(gyro.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES));
+            motors.log("Left/Position", leftMotor.getCurrentPosition());
+            motors.log("Right/Position", rightMotor.getCurrentPosition());
+            sensors.log("Gyro/Heading", gyro.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES));
 
-            // Display current values
             telemetry.addData("Left Position", leftMotor.getCurrentPosition());
             telemetry.addData("Right Position", rightMotor.getCurrentPosition());
-            telemetry.addData("Heading", gyro.getRobotYawPitchRollAngles().getYaw(AngleUnit.DEGREES));
         }
     }
     ```
 
-## Channel naming convention
+`FateTable` lives in `gay.zharel.fateweaver.telemetry`, next to `Fate`. Java boxes the primitives for
+you.
 
-Slashes in a channel name become folders in AdvantageScope, which is why the example above uses
-`Motors/Left/Position` rather than `leftMotorPosition`:
+## Path naming convention
+
+Slashes in a path become folders in AdvantageScope. A table named `Motors` and a name of
+`Left/Position` give the path `Motors/Left/Position`. Tables nest too, so
+`Fate.table("Motors/Left")` is the same as `Fate.table("Motors").table("Left")`. The example above
+produces this tree:
 
 ```
-📁 Motors
-  📁 Left
-    📊 Position
-  📁 Right
-    📊 Position
-📁 Sensors
-  📁 Gyro
-    📊 Heading
+Motors
+  Left
+    Position
+  Right
+    Position
+Sensors
+  Gyro
+    Heading
 ```
 
-Start with a broad category (`Motors`, `Sensors`, `Robot`) and get specific from there. Keep the
-leaf short, since the folders already carry the context: `Position` reads better than
-`CurrentEncoderPosition` when it already sits under `Motors/Left`. Pick one casing and stick to it,
+Start with a broad category such as `Motors`, `Sensors` or `Robot`, then get specific. Keep the last
+part short, since the folders already carry the context. `Position` reads better than
+`CurrentEncoderPosition` when it already sits under `Motors/Left`. Pick one casing and keep it,
 because the tree sorts as text.
 
 ## Logging complex objects
 
-Whole objects go into a channel as easily as doubles do. Here's a `Pose2d`:
+You can log a whole object the same way you log a double. Here is a `Pose2d`:
 
 === "Kotlin"
 
     ```kotlin
     class DriveLoggingOpMode : OpMode() {
         private lateinit var drive: MecanumDrive
-        private lateinit var poseChannel: FlightLogChannel<Pose2d>
-        private lateinit var velocityChannel: FlightLogChannel<PoseVelocity2d>
+        private val robot = Fate.table("Robot")
 
         override fun init() {
             drive = MecanumDrive(hardwareMap, Pose2d(0.0, 0.0, 0.0))
-
-            // FateWeaver automatically creates schemas for RoadRunner classes
-            poseChannel = FlightRecorder.createChannel("Robot/Pose", Pose2d::class.java)
-            velocityChannel = FlightRecorder.createChannel("Robot/Velocity", PoseVelocity2d::class.java)
         }
 
         override fun loop() {
-            // Update drivetrain
             drive.setDrivePowers(PoseVelocity2d(
                 Vector2d(-gamepad1.left_stick_y.toDouble(), -gamepad1.left_stick_x.toDouble()),
                 -gamepad1.right_stick_x.toDouble()
@@ -203,9 +205,8 @@ Whole objects go into a channel as easily as doubles do. Here's a `Pose2d`:
 
             val velocity = drive.updatePoseEstimate()
 
-            // Log complex objects directly
-            poseChannel.put(drive.pose)
-            velocityChannel.put(velocity)
+            robot.log("Pose", drive.pose)
+            robot.log("Velocity", velocity)
 
             telemetry.addData("X", drive.pose.position.x)
             telemetry.addData("Y", drive.pose.position.y)
@@ -219,21 +220,15 @@ Whole objects go into a channel as easily as doubles do. Here's a `Pose2d`:
     ```java
     public class DriveLoggingOpMode extends OpMode {
         private MecanumDrive drive;
-        private FlightLogChannel<Pose2d> poseChannel;
-        private FlightLogChannel<PoseVelocity2d> velocityChannel;
+        private final FateTable robot = Fate.table("Robot");
 
         @Override
         public void init() {
             drive = new MecanumDrive(hardwareMap, new Pose2d(0.0, 0.0, 0.0));
-
-            // FateWeaver automatically creates schemas for RoadRunner classes
-            poseChannel = FlightRecorder.createChannel("Robot/Pose", Pose2d.class);
-            velocityChannel = FlightRecorder.createChannel("Robot/Velocity", PoseVelocity2d.class);
         }
 
         @Override
         public void loop() {
-            // Update drivetrain
             drive.setDrivePowers(new PoseVelocity2d(
                 new Vector2d(-gamepad1.left_stick_y, -gamepad1.left_stick_x),
                 -gamepad1.right_stick_x
@@ -241,9 +236,8 @@ Whole objects go into a channel as easily as doubles do. Here's a `Pose2d`:
 
             PoseVelocity2d velocity = drive.updatePoseEstimate();
 
-            // Log complex objects directly
-            poseChannel.put(drive.getPose());
-            velocityChannel.put(velocity);
+            robot.log("Pose", drive.getPose());
+            robot.log("Velocity", velocity);
 
             telemetry.addData("X", drive.getPose().position.x);
             telemetry.addData("Y", drive.getPose().position.y);
@@ -253,18 +247,26 @@ Whole objects go into a channel as easily as doubles do. Here's a `Pose2d`:
     ```
 
 !!! info "No schema needed"
-    Hand `createChannel` a class and FateWeaver reflects over its public properties to build the
-    schema. You only write one yourself when you want different bytes than that produces.
+    FateWeaver reflects over the public properties of the class you log and builds the schema from
+    them. The first log to a path fixes that schema. To use your own, pass it as a third argument,
+    as in `robot.log("Pose", drive.pose, mySchema)`.
+
+Kotlin keeps type arguments, so `table.log("powers", mapOf("fl" to 0.5))` logs a
+`Map<String, Double>`. Java's two-argument `log` only sees the runtime class and cannot log a `Map`
+or a `List`. In Java, pass a schema:
+
+```java
+table.log("powers", powers, new MapSchema<>(StringSchema.INSTANCE, DoubleSchema.INSTANCE));
+```
 
 ## Custom data classes
 
-Your own classes work the same way. Group the values you always want at one timestamp:
+Your own classes work the same way. Group values you always want at the same moment:
 
 === "Kotlin"
 
     ```kotlin
     data class RobotState(
-        val timestamp: Long,
         val batteryVoltage: Double,
         val temperature: Double,
         val isAutonomous: Boolean,
@@ -272,24 +274,22 @@ Your own classes work the same way. Group the values you always want at one time
     )
 
     class StateLoggingOpMode : OpMode() {
-        private lateinit var stateChannel: FlightLogChannel<RobotState>
         private lateinit var voltageSensor: VoltageSensor
+        private val robot = Fate.table("Robot")
 
         override fun init() {
             voltageSensor = hardwareMap.voltageSensor.iterator().next()
-            stateChannel = FlightRecorder.createChannel("Robot/State", RobotState::class.java)
         }
 
         override fun loop() {
             val currentState = RobotState(
-                timestamp = System.nanoTime(),
                 batteryVoltage = voltageSensor.voltage,
-                temperature = 25.0, // Mock temperature
+                temperature = 25.0, // placeholder value
                 isAutonomous = false,
                 alliance = "Red"
             )
 
-            stateChannel.put(currentState)
+            robot.log("State", currentState)
 
             telemetry.addData("Battery", "%.1f V", currentState.batteryVoltage)
             telemetry.addData("Temperature", "%.1f°C", currentState.temperature)
@@ -301,15 +301,13 @@ Your own classes work the same way. Group the values you always want at one time
 
     ```java
     public class RobotState {
-        public final long timestamp;
         public final double batteryVoltage;
         public final double temperature;
         public final boolean isAutonomous;
         public final String alliance;
 
-        public RobotState(long timestamp, double batteryVoltage, double temperature,
+        public RobotState(double batteryVoltage, double temperature,
                          boolean isAutonomous, String alliance) {
-            this.timestamp = timestamp;
             this.batteryVoltage = batteryVoltage;
             this.temperature = temperature;
             this.isAutonomous = isAutonomous;
@@ -318,26 +316,24 @@ Your own classes work the same way. Group the values you always want at one time
     }
 
     public class StateLoggingOpMode extends OpMode {
-        private FlightLogChannel<RobotState> stateChannel;
         private VoltageSensor voltageSensor;
+        private final FateTable robot = Fate.table("Robot");
 
         @Override
         public void init() {
             voltageSensor = hardwareMap.voltageSensor.iterator().next();
-            stateChannel = FlightRecorder.createChannel("Robot/State", RobotState.class);
         }
 
         @Override
         public void loop() {
             RobotState currentState = new RobotState(
-                System.nanoTime(),
                 voltageSensor.getVoltage(),
-                25.0, // Mock temperature
+                25.0, // placeholder value
                 false,
                 "Red"
             );
 
-            stateChannel.put(currentState);
+            robot.log("State", currentState);
 
             telemetry.addData("Battery", "%.1f V", currentState.batteryVoltage);
             telemetry.addData("Temperature", "%.1f°C", currentState.temperature);
@@ -345,51 +341,93 @@ Your own classes work the same way. Group the values you always want at one time
     }
     ```
 
-## Performance considerations
+The class has no timestamp field. FateWeaver stamps every logged value itself, so you never log a
+time by hand.
 
-### Downsampling
+### Spreading an object across several paths
 
-A loop running at 50 Hz doesn't need every channel written 50 times a second. `downsample` wraps a
-channel with a minimum period in nanoseconds and drops writes that arrive too soon:
+If you want each field on its own path, implement `FateLoggable` and log the object with
+`Fate.log`. Its values land under the name you pass.
 
-```kotlin
-class DownsampledLoggingOpMode : OpMode() {
-    private lateinit var fastChannel: FlightLogChannel<Double>
-    private lateinit var slowChannel: DownsampledChannel<Pose2d>
+=== "Kotlin"
 
-    override fun init() {
-        fastChannel = FlightRecorder.createChannel("FastData", DoubleSchema.INSTANCE)
-
-        val poseChannel = FlightRecorder.createChannel("Robot/Pose", Pose2d::class.java)
-        slowChannel = poseChannel.downsample(100_000_000) // at most every 100ms
+    ```kotlin
+    class DriveState(val left: Double, val right: Double, val pose: Pose2d) : FateLoggable {
+        override fun logTo(table: FateTable) {
+            table.log("left", left)
+            table.log("right", right)
+            table.log("pose", pose)
+        }
     }
 
-    override fun loop() {
-        // Every loop cycle
-        fastChannel.put(System.nanoTime() / 1e9)
+    // Lands at drive/left, drive/right and drive/pose
+    Fate.log("drive", DriveState(leftPower, rightPower, drive.pose))
+    ```
 
-        // At most ten times a second; the rest are dropped
-        slowChannel.put(getCurrentPose())
+=== "Java"
+
+    ```java
+    public class DriveState implements FateLoggable {
+        private final double left, right;
+        private final Pose2d pose;
+
+        public DriveState(double left, double right, Pose2d pose) {
+            this.left = left;
+            this.right = right;
+            this.pose = pose;
+        }
+
+        @Override
+        public void logTo(FateTable table) {
+            table.log("left", left);
+            table.log("right", right);
+            table.log("pose", pose);
+        }
+    }
+
+    // Lands at drive/left, drive/right and drive/pose
+    Fate.log("drive", new DriveState(leftPower, rightPower, drive.getPose()));
+    ```
+
+The fields are separate writes. A reader can see some from this loop and some from the last one.
+
+## Performance considerations
+
+### Log slow values less often
+
+A loop running at 50 Hz does not need every path written 50 times a second. There is no built-in
+downsampling, so gate the call yourself:
+
+```kotlin
+private val timer = ElapsedTime()
+private val robot = Fate.table("Robot")
+
+override fun loop() {
+    Fate.log("FastData", System.nanoTime() / 1e9)  // every loop
+
+    if (timer.milliseconds() >= 100) {              // ten times a second
+        robot.log("Pose", drive.pose)
+        timer.reset()
     }
 }
 ```
 
 ### Group values you always log together
 
-Every message entry carries 8 bytes of overhead, a 4-byte entry type and a 4-byte channel index,
-before any of your data. Three separate double channels written each loop cost 3 × (8 + 8) = 48
-bytes. The same three doubles in one class cost 8 + 24 = 32.
+Every message entry carries 16 bytes of overhead before your data. That is a 4-byte entry type, a
+4-byte channel index and an 8-byte timestamp. Three separate double paths logged each loop cost
+3 × (16 + 8) = 72 bytes. The same three doubles in one class cost 16 + 24 = 40 bytes.
 
 ```kotlin
-// One channel, one entry per loop
+// One path, one entry per loop
 data class SensorData(val gyro: Double, val accel: Double, val voltage: Double)
-val sensorChannel = FlightRecorder.createChannel("Sensors", SensorData::class.java)
+Fate.log("Sensors", SensorData(gyro, accel, voltage))
 
-// Three channels, three entries per loop
-val gyroChannel = FlightRecorder.createChannel("Gyro", DoubleSchema.INSTANCE)
-val accelChannel = FlightRecorder.createChannel("Accel", DoubleSchema.INSTANCE)
-val voltageChannel = FlightRecorder.createChannel("Voltage", DoubleSchema.INSTANCE)
+// Three paths, three entries per loop
+Fate.log("Gyro", gyro)
+Fate.log("Accel", accel)
+Fate.log("Voltage", voltage)
 ```
 
-The tradeoff is granularity. Separate channels are easier to plot on their own and easier to
-downsample independently, so only group values you genuinely always want at the same timestamp.
+Separate paths cost more space, but you can plot and throttle each one on its own. Group values only
+when you always want them at the same timestamp.

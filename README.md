@@ -2,12 +2,14 @@
 
 ![Maven Central Version](https://img.shields.io/maven-central/v/gay.zharel.fateweaver/ftc?style=for-the-badge&label=Latest%20Version)
 
-A RoadRunner-log based data logging library for FTC robotics.
-Check out the [API docs](http://docs.fate.zharel.gay/)!
+FateWeaver records data from your FTC robot to a log file and shows it in AdvantageScope.
+You call `Fate.log` with a name and a value, and FateWeaver writes one log file for each OpMode.
+
+The API reference is at [docs.fate.zharel.gay](http://docs.fate.zharel.gay/). The guides are in [`docs/docs`](docs/docs/).
 
 ## Installation
 
-FateWeaver is available on Maven Central. Add the following dependencies to your project:
+FateWeaver is on Maven Central. Add it to your `TeamCode` dependencies.
 
 ### Gradle (Kotlin DSL)
 ```kotlin
@@ -23,280 +25,107 @@ dependencies {
 }
 ```
 
-> **Note:** Replace `VERSION` with the latest version displayed above
-> (without the `v` prefix).
+> **Note:** Replace `VERSION` with the latest version shown in the badge above, without the `v` prefix.
 
 ## Features
 
-- Easy-to-use logging API with `FlightRecorder` and `FlightLogChannel`!
-- Live streaming to AdvantageScope with `FlightProjector`, while still recording to a file!
-- Type-safe channels, including support for custom data types using reflection!
-- Modern Vue.js-based web dashboard for downloading and managing logs!
-- Clean `FateRouter` DSL for easily creating your own custom web routes!
-- Backwards-compatibility with existing RoadRunner FlightRecorder API.
-- Support for typed classes with `AS_TYPE` and fully customizable serialization with `CustomStructSchema`!
+- Log numbers, strings, booleans, arrays, maps and your own classes with one call.
+- Group values into tables like `Drive/leftVelocity`, which show up as folders in AdvantageScope.
+- A log file for every OpMode, with old logs deleted once the folder passes 250 MB.
+- Live streaming to AdvantageScope while the file is still being recorded.
+- A web dashboard on the Robot Controller for downloading logs.
+- Custom serialization with `CustomStructSchema`.
 
 ## Usage
 
-This OpMode uses FateWeaver to log the robot's pose and velocity;
-while it uses classes in the RoadRunner library/quickstart,
-neither of them are required.
+There is nothing to set up. FateWeaver opens a log when an OpMode initializes and closes it when the OpMode stops.
+
+### Kotlin
+
+```kotlin
+import gay.zharel.fateweaver.telemetry.Fate
+import gay.zharel.fateweaver.telemetry.log
+
+class MyOpMode : OpMode() {
+    private val drive = Fate.table("Drive")
+
+    override fun init() {}
+
+    override fun loop() {
+        Fate.log("Battery/Voltage", hardwareMap.voltageSensor.iterator().next().voltage)
+        drive.log("leftVelocity", leftMotor.velocity)
+    }
+}
+```
+
+### Java
 
 ```java
+import gay.zharel.fateweaver.telemetry.Fate;
+import gay.zharel.fateweaver.telemetry.FateTable;
+
 public class MyOpMode extends OpMode {
-    MecanumDrive drive;
-    FlightLogChannel<Long> timestamps;
-    FlightLogChannel<Pose2d> poses;
+    private final FateTable drive = Fate.table("Drive");
 
     @Override
-    public void init() {
-        drive = new MecanumDrive(hardwareMap, new Pose2d(0.0, 0.0, 0.0));
-        timestamps = FlightRecorder.createChannel("TIMESTAMP", LongSchema.INSTANCE);
-        poses = FlightRecorder.createChannel("Robot/Pose", Pose2d.class);
-    }
+    public void init() {}
 
     @Override
     public void loop() {
-        drive.setDrivePowers(/* stuff */);
-        PoseVelocity2d velocity = drive.updatePoseEstimate();
-        
-        timestamps.put(System.nanoTime());
-        FlightRecorder.write('Robot/Velocity', velocity);
-        poses.put(drive.localizer.getPose());
+        Fate.log("Battery/Voltage", hardwareMap.voltageSensor.iterator().next().getVoltage());
+        drive.log("leftVelocity", leftMotor.getVelocity());
     }
 }
 ```
 
-## Using FlightRecorder as Telemetry
+A path is created by its first log and keeps the type of that first value. If you log a different type to the same path later, FateWeaver prints one warning and skips the value. Logging never throws an exception into your robot code.
 
-`FlightRecorder` implements the `Telemetry` interface, 
-allowing you to use it as a drop-in replacement for the standard FTC telemetry system. 
-This means you can log telemetry data directly to your flight recorder logs while maintaining familiar telemetry syntax,
-or to use with FTC Dashboard's `MultipleTelemetry` or FTC Panels' `JoinedTelemetry` to write to
-your dashboard of choice and a log at the same time.
+Tables are cheap, so keep one in a field. A name like `"Drive/Odometry"` makes a table inside a table.
 
-### Basic Telemetry Logging
+Kotlin's `log` keeps type arguments, so `drive.log("powers", mapOf("fl" to 0.5))` logs a `Map<String, Double>`. Java can only see the runtime class, so it cannot infer a map or a list. Pass a schema for those:
 
 ```java
-public class MyOpMode extends OpMode {
-    @Override
-    public void init() {
-        // Use FlightRecorder just like regular telemetry
-        FlightRecorder.addData("Status", "Initialized");
-        FlightRecorder.update();
-    }
-
-    @Override
-    public void loop() {
-        // Add data and update - values are automatically logged to channels
-        FlightRecorder.addData("Runtime", getRuntime());
-        FlightRecorder.addData("Heading", "%.1f degrees", getHeading());
-        FlightRecorder.update();
-    }
-}
+drive.log("powers", powers, new MapSchema<>(StringSchema.INSTANCE, DoubleSchema.INSTANCE));
 ```
 
-### Important Notes
+The Kotlin `log` is an extension function, so you must import `gay.zharel.fateweaver.telemetry.log`.
 
-- When you add data with a new caption, FlightRecorder automatically creates a log channel for it.
-- You must call `FlightRecorder.update()` to actually write the telemetry data to the log; this is similar to how the standard telemetry system works.
-- All telemetry data is logged as strings to maintain compatibility with the Telemetry interface.
-- Some Telemetry methods like `clear()`, `speak()`, and `log()` are not supported and will throw `UnsupportedOperationException` if called.
+A class that is really several values can implement `FateLoggable` and write each value itself. `Fate.log("drive", driveState)` then logs everything under `drive/`.
 
-## Advanced Schema Features
+For custom schemas, `AS_TYPE` and `CustomStructSchema`, see the schemas page in the docs.
 
-### Typed Classes with AS_TYPE
+## Where logs go
 
-FateWeaver automatically detects classes with a companion object containing an `AS_TYPE` property
-(or a static `AS_TYPE` field for Java classes)
-and creates enhanced schemas that include type information in the serialized data.
-This is useful for polymorphic logging and schema evolution.
+Logs are saved on the Robot Controller in `FateWeaver/Logs`. Each file is named `yyyy_MM_dd__HH_mm_ss_SSS__<OpModeName>.fate`. Once the folder passes 250 MB, FateWeaver deletes the oldest logs first.
 
-AdvantageScope will automatically use this information to display the correct type in the UI.
+Values logged while no OpMode is running are not recorded. Each log also has an `OpMode/Event` channel with `PRE_INIT`, `PRE_START` and `POST_STOP`.
 
-```kotlin
-data class RobotCommand(
-    val type: String,
-    val timestamp: Long,
-    val parameters: Map<String, String>
-) {
-    companion object {
-        val AS_TYPE = "RobotCommand"  // This triggers TypedClassSchema
-    }
-}
+## Viewing logs
 
-// Usage
-val commandChannel = FlightRecorder.createChannel("commands", RobotCommand::class.java)
-commandChannel.put(RobotCommand("MOVE_FORWARD", System.nanoTime(), mapOf("speed" to "0.8")))
-```
+1. Connect your computer to the robot's WiFi network.
+2. Open `http://192.168.43.1:8080/fate` in a browser. On a phone Robot Controller, use `192.168.49.1`.
+3. Download a log.
+4. Open it in AdvantageScope with `File` → `Open Log(s)...`.
 
-### Custom Serialization with CustomStructSchema
+The log format is version 3, so you need an AdvantageScope build with FateWeaver v3 support.
 
-For maximum flexibility, you can define exactly how your objects are serialized using `CustomStructSchema`.
-This is particularly useful for:
-- Legacy classes that can't be modified
-- Optimized encoding to reduce log file size
-- Data transformation during serialization
-- Including only specific fields
+## Live streaming
 
-```kotlin
-// Transform and optimize data during serialization
-data class SensorReading(val timestamp: Long, val value: Double, val sensorId: String, val metadata: Map<String, Any>)
-
-val optimizedSensorSchema = CustomStructSchema<SensorReading>(
-    type = "OptimizedSensor",
-    componentNames = listOf("time", "reading", "sensor"),
-    componentSchemas = listOf(LongSchema, DoubleSchema, StringSchema),
-    encoder = { reading ->
-        listOf(
-            reading.timestamp / 1000000,  // Convert nanoseconds to milliseconds
-            String.format("%.3f", reading.value).toDouble(),  // Round to 3 decimal places
-            reading.sensorId.take(8)  // Truncate sensor ID to save space
-        )
-    }
-)
-
-// Usage with custom schema
-val sensorChannel = writer.createChannel("sensors", optimizedSensorSchema)
-sensorChannel.put(SensorReading(System.nanoTime(), 3.14159265, "GYRO_SENSOR_001", mapOf()))
-```
-
-#### Coordinate System Transformations
-
-```kotlin
-data class RobotPose(val x: Double, val y: Double, val heading: Double)
-
-val fieldCentricSchema = CustomStructSchema<RobotPose>(
-    type = "FieldCentricPose",
-    componentNames = listOf("fieldX", "fieldY", "fieldHeading"),
-    componentSchemas = listOf(DoubleSchema, DoubleSchema, DoubleSchema),
-    encoder = { pose ->
-        // Transform robot-centric coordinates to field-centric
-        val fieldX = pose.x + FIELD_OFFSET_X
-        val fieldY = pose.y + FIELD_OFFSET_Y
-        val fieldHeading = normalizeAngle(pose.heading)
-        listOf(fieldX, fieldY, fieldHeading)
-    }
-)
-```
-
-#### Selective Field Logging
-
-```java
-class Pose2d {
-    public Vector2d position;
-    public Rotation2d heading;
-    
-    public static final CustomStructSchema<Pose2d> SCHEMA = new CustomStructSchema<>(
-            "Pose2d",
-            List.of("x", "y", "heading"),
-            List.of(DoubleSchema.INSTANCE, DoubleSchema.INSTANCE, DoubleSchema.INSTANCE),
-            pose -> List.of(pose.position.x, pose.position.y, pose.heading.toDouble())
-    );
-}
-```
-
-## Schema Registry
-
-FateWeaver maintains a global schema registry that automatically caches and reuses schemas for classes.
-When you call `FateSchema.schemaOfClass()` or use a class directly with `FlightRecorder.createChannel()`,
-the library automatically creates an appropriate schema and stores it in the registry.
-
-### Registering Custom Schemas
-
-You can register custom schemas globally using `FateSchema.registerSchema()`.
-Once registered,
-your custom schema will be used automatically whenever that class type is logged,
-without needing to explicitly pass the schema to each channel creation.
-
-This is particularly useful for:
-- Defining optimized serialization for frequently-used classes
-- Overriding the default reflection-based schema
-- Ensuring consistent serialization across your entire codebase
-
-#### Kotlin Example
-
-```kotlin
-// Define your custom schema once
-val optimizedPoseSchema = CustomStructSchema<Pose2d>(
-    type = "Pose2d",
-    componentNames = listOf("x", "y", "heading"),
-    componentSchemas = listOf(DoubleSchema, DoubleSchema, DoubleSchema),
-    encoder = { pose -> 
-        listOf(pose.position.x, pose.position.y, pose.heading.toDouble())
-    }
-)
-
-// Register it globally (typically in your initialization code)
-FateSchema.registerSchema<Pose2d>(optimizedPoseSchema)
-
-// Now all channels using Pose2d will automatically use your custom schema
-val poseChannel = FlightRecorder.createChannel("Robot/Pose", Pose2d::class.java)
-// Uses optimizedPoseSchema automatically!
-```
-
-#### Java Example
-
-```java
-public class MyOpMode extends LinearOpMode {
-    @Override
-    public void runOpMode() {
-        // Register custom schema at initialization
-        CustomStructSchema<Pose2d> poseSchema = new CustomStructSchema<>(
-            "Pose2d",
-            List.of("x", "y", "heading"),
-            List.of(DoubleSchema.INSTANCE, DoubleSchema.INSTANCE, DoubleSchema.INSTANCE),
-            pose -> List.of(pose.position.x, pose.position.y, pose.heading.toDouble())
-        );
-        
-        FateSchema.registerSchema(Pose2d.class, poseSchema);
-        
-        // All channels created after registration use the custom schema
-        FlightLogChannel<Pose2d> poseChannel = FlightRecorder.createChannel("Robot/Pose", Pose2d.class);
-        // Automatically uses poseSchema!
-    }
-}
-```
-
-## Live Streaming to AdvantageScope
-
-`FlightProjector` broadcasts your log over a WebSocket on port `8110` as the OpMode runs, so you can
-watch the robot in AdvantageScope instead of downloading a file afterwards. It streams exactly the
-bytes a `.fate` file contains, and it runs alongside file logging rather than replacing it.
-
-There is nothing to set up on the robot. In AdvantageScope, set the robot address and pick
-`File` → `Connect to Robot` → `FateWeaver`.
+`FlightProjector` streams the log to AdvantageScope over a WebSocket on port 8110 while the OpMode runs. It sends the same bytes as the `.fate` file, and clients that connect late get the schemas replayed. In AdvantageScope, set the robot address and choose `File` → `Connect to Robot` → `FateWeaver`.
 
 > [!WARNING]
 > The FTC 2026-2027 competition manual prohibits live streaming from third-party libraries during
-> competition. **FlightProjector is for testing and tuning only.**
+> competition. FlightProjector is for testing and tuning only. Turn it off with the dashboard toggle
+> or the "Enable/Disable FateWeaver Live" OpMode before you compete. Both close the server and
+> are remembered across restarts.
 
-Turn it off from the Driver Station by running the **"Enable/Disable FateWeaver Live"** OpMode in
-the `FateWeaver` group — it shows the current state and flips it on START. There is also a toggle on
-the web dashboard. Both close the server and unbind the port, and the choice survives robot
-restarts, so it is a once-per-event action rather than a per-match one. Recording to files keeps
-working either way.
+To stop FateWeaver from starting the projector in code, set `FateLogManager.mode = LogMode.FILE`. This is a runtime variable, not a compile-time switch. Logs are still recorded to files. Only the dashboard toggle and the OpMode close the server for sure, because `FlightProjector.setEnabled(true)` can start it again.
 
-To rule it out at compile time instead:
+See [Log management](docs/docs/log-management.md) for the details.
 
-```java
-// Recording only, no live streaming, nothing ever binds the port
-FlightRecorder.setMode(LogMode.FILE);
-```
+## Custom web routes
 
-## Web Dashboard & Downloading Logs
-
-FateWeaver includes a sleek, modern Vue.js web dashboard served directly from the robot! 
-
-To view and download your logs:
-1. Connect your computer to the robot's WiFi network (Control Hub: `192.168.43.1`, Phone: `192.168.49.1`).
-2. Navigate to `http://192.168.43.1:8080/fate` in your web browser.
-
-From there, you can view file sizes, last modified dates, and download logs directly for viewing in AdvantageScope.
-
-## Custom Web Routes (FateRouter)
-
-FateWeaver includes a clean, modern Domain Specific Language (DSL) called `FateRouter` to abstract away the boilerplate of the FTC SDK's NanoHTTPD web server. This allows you to easily create your own web APIs directly on the robot!
+`FateRouter` wraps the FTC SDK's NanoHTTPD web server, so you can add your own routes to the robot.
 
 ```kotlin
 manager.route {
@@ -311,10 +140,13 @@ manager.route {
 }
 ```
 
+## Documentation
+
+- [Installation](docs/docs/installation.md)
+- [Getting started](docs/docs/getting-started.md)
+- [Schemas](docs/docs/schemas.md)
+- [Log management](docs/docs/log-management.md)
+
 ## Development
 
-If you are cloning this repository to build FateWeaver from source or contribute, **you must have [Bun](https://bun.sh/) installed**.
-
-FateWeaver uses a modern Vue.js frontend for its web dashboard. The Android Gradle build process is configured to automatically run `bun install` and `bun run build` during compilation to bundle the frontend assets into the Android library. 
-
-If `bun` is not installed on your system, the Gradle build will fail.
+To build FateWeaver from source, install [Bun](https://bun.sh/). The Gradle build runs `bun install` and `bun run build` in `frontend/`, and the Vue dashboard it produces is bundled into the Android library. The build fails if Bun is missing. See `frontend/README.md` for working on the dashboard.

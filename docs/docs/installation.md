@@ -1,19 +1,19 @@
 # Installation
 
-FateWeaver is distributed through Maven Central, making it easy to add to any FTC project.
+FateWeaver is published on Maven Central. You add it as one Gradle dependency.
 
 ### Finding the latest version
 
 ![Maven Central Version](https://img.shields.io/maven-central/v/gay.zharel.fateweaver/ftc?style=for-the-badge&label=Latest%20Version)
 
-!!! tip "Version Selection"
+!!! tip "Version selection"
     Replace `VERSION` with the latest version shown in the badge above, **without** the `v` prefix. For example, if the badge shows `v0.3.2`, use `0.3.2` in your dependency declaration.
 
 ## FTC project integration
 
 ### Standard FTC project structure
 
-If you're using the standard FTC Robot Controller project structure, add the dependency to your `TeamCode/build.gradle` file:
+If you use the standard FTC Robot Controller project structure, add the dependency to your `TeamCode/build.gradle` file:
 
 === "Kotlin DSL"
 
@@ -41,10 +41,12 @@ If you're using the standard FTC Robot Controller project structure, add the dep
     }
     ```
 
-### RoadRunner compatibility
+### Coming from RoadRunner
 
-FateWeaver is backwards compatible with RoadRunner's FlightRecorder API. 
-If you're using RoadRunner, add the dependency to your `build.gradle` file:
+FateWeaver is not a drop-in replacement for RoadRunner's `FlightRecorder`, and the `FlightRecorder`
+API is gone. The log file format still shares its first schema tags with RoadRunner logs.
+
+Add the dependency the same way:
 
 ```kotlin
 dependencies {
@@ -52,54 +54,65 @@ dependencies {
 }
 ```
 
-Then swap any `com.acmerobotics.roadrunner.ftc.FlightRecorder` import for
-`gay.zharel.fateweaver.FlightRecorder`.
+Then change your logging calls. There is no `createChannel` step, so delete your channel fields and
+log directly:
+
+```kotlin
+// Before, with RoadRunner's FlightRecorder
+FlightRecorder.write("x", obj)
+
+// After
+Fate.log("x", obj)
+```
+
+In Kotlin, also import `gay.zharel.fateweaver.telemetry.Fate` and
+`gay.zharel.fateweaver.telemetry.log`. You no longer log a `TIMESTAMP` channel either, because
+FateWeaver stamps every value for you.
 
 ## Verification
 
-Drop this OpMode in and run it. If it initializes without throwing, the dependency resolved:
+Add this OpMode and run it. It logs one string each loop, so a log file with a `test` path means the
+dependency resolved.
 
 ### Test installation
-
-Create a simple OpMode to verify FateWeaver is working:
 
 ```java
 @TeleOp(name = "FateWeaver Test")
 public class FateWeaverTest extends OpMode {
-    private FlightLogChannel<String> testChannel;
-
     @Override
     public void init() {
-        // This will succeed if FateWeaver is properly installed
-        testChannel = FlightRecorder.createChannel("test", String.class);
-        telemetry.addData("FateWeaver", "Successfully initialized!");
+        telemetry.addData("FateWeaver", "Ready");
     }
 
     @Override
     public void loop() {
-        testChannel.put("Hello from FateWeaver!");
+        Fate.log("test", "Hello from FateWeaver!");
         telemetry.addData("Status", "Logging data...");
     }
 }
 ```
 
+Run the OpMode from the Driver Station, then stop it. FateWeaver writes the log to the
+`FateWeaver/Logs` folder on the Robot Controller. The file name starts with a date and time and ends
+in `.fate`.
+
 ### Import errors
 
-If you see import errors, ensure your IDE has refreshed the Gradle project:
+If you see import errors, make sure your IDE has refreshed the Gradle project:
 
 - **Android Studio**: Click "Sync Project with Gradle Files"
 - **IntelliJ IDEA**: Click the Gradle refresh button or use `Ctrl+Shift+O` (Cmd+Shift+O on Mac)
 
 ### Getting help
 
-If you're still having issues:
+If you still have issues:
 
-1. Check the [GitHub Issues](https://github.com/hermesftc/fateweaver/issues) for similar problems
-2. Verify you're using a [supported version](#requirements)
-3. Create a [new issue](https://github.com/hermesftc/fateweaver/issues/new) with your build configuration
+1. Check the [GitHub Issues](https://github.com/hermesftc/fateweaver/issues) for similar problems.
+2. Verify you are using a [supported version](#requirements).
+3. Create a [new issue](https://github.com/hermesftc/fateweaver/issues/new) with your build configuration.
 
 ## Next steps
 
-- [Getting started](getting-started.md) - your first logging OpMode
-- [Schema system](schemas.md) - how types become bytes
+- [Getting started](getting-started.md) walks through your first logging OpMode.
+- [Schema system](schemas.md) explains how types become bytes.
 - [API JavaDocs](https://javadoc.io/doc/gay.zharel.fateweaver/ftc/latest/)

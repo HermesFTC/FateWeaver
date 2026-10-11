@@ -5,13 +5,14 @@ the data, so a reader can decode the file without knowing anything about your co
 
 ## What are schemas?
 
-Every channel has exactly one schema, and that schema fixes the channel's layout for the life of
-the log. It gives you the field names and types a viewer needs, and it makes a type mismatch a
-compile error rather than a plot that looks wrong three matches later.
+Every logged path has exactly one schema, and that schema fixes the path's layout for the life of
+the log. It gives a viewer the field names and types it needs. It also means a value of the wrong
+type gets a warning and is skipped, instead of showing up as a plot that looks wrong three matches
+later.
 
 ## Schema types overview
 
-FateWeaver provides several categories of schemas:
+FateWeaver has three categories of schemas:
 
 ```mermaid
 graph TD
@@ -38,6 +39,6 @@ graph TD
 
 ## Quick links
 
-- **[Collection Schemas](collection-schemas.md)** - Arrays, maps, enums and optionals
-- **[Schema Registry](registry.md)** - Global schema management and reuse
-- **[Selection Guide](guide.md)** - Performance tips and best practices
+- **[Collection Schemas](collection-schemas.md)**: Arrays, maps, enums and optionals
+- **[Schema Registry](registry.md)**: Global schema management and reuse
+- **[Selection Guide](guide.md)**: Performance tips and best practices

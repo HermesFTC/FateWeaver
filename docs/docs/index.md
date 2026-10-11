@@ -2,38 +2,34 @@
 
 ![Maven Central Version](https://img.shields.io/maven-central/v/gay.zharel.fateweaver/ftc?style=for-the-badge&label=Latest%20Version)
 
-FateWeaver is a binary data logger for FTC robots. It writes RoadRunner-format logs that
-AdvantageScope opens directly.
+FateWeaver is a binary data logger for FTC robots. It writes one log file per OpMode, and
+AdvantageScope opens the file directly.
 
-Channels are typed, so writing a `Double` to an `Int` channel is a compile error rather than a
-garbled plot three matches later. Your own classes are logged by reflection, or by a schema you
-write when you want control over the bytes. It drops in where RoadRunner's `FlightRecorder` already
-is, and runs alongside the logging you already have.
+You log a value by name with `Fate.log`. There is nothing to create first, and every value is
+stamped with the time you logged it. A path keeps the type of its first value. If you later log a
+different type to it, FateWeaver warns once and skips that value instead of garbling the plot. Your
+own classes are logged by reflection, or with a schema you write when you want control over the
+bytes.
 
 ## Quick start
 
 === "Kotlin"
 
     ```kotlin
+    import gay.zharel.fateweaver.telemetry.Fate
+    import gay.zharel.fateweaver.telemetry.log
+
     class MyOpMode : OpMode() {
         private lateinit var drive: MecanumDrive
-        private lateinit var poseChannel: FlightLogChannel<Pose2d>
-        private lateinit var timestampChannel: FlightLogChannel<Long>
 
         override fun init() {
             drive = MecanumDrive(hardwareMap, Pose2d(0.0, 0.0, 0.0))
-
-            // Create type-safe channels
-            poseChannel = FlightRecorder.createChannel("Robot/Pose", Pose2d::class.java)
-            timestampChannel = FlightRecorder.createChannel("TIMESTAMP", LongSchema.INSTANCE)
         }
 
         override fun loop() {
             drive.updatePoseEstimate()
 
-            // Log data with full type safety
-            poseChannel.put(drive.pose)
-            timestampChannel.put(System.nanoTime())
+            Fate.log("Robot/Pose", drive.pose)
         }
     }
     ```
@@ -41,34 +37,32 @@ is, and runs alongside the logging you already have.
 === "Java"
 
     ```java
+    import gay.zharel.fateweaver.telemetry.Fate;
+
     public class MyOpMode extends OpMode {
         private MecanumDrive drive;
-        private FlightLogChannel<Pose2d> poseChannel;
-        private FlightLogChannel<Long> timestampChannel;
 
         @Override
         public void init() {
             drive = new MecanumDrive(hardwareMap, new Pose2d(0.0, 0.0, 0.0));
-
-            // Create type-safe channels
-            poseChannel = FlightRecorder.createChannel("Robot/Pose", Pose2d.class);
-            timestampChannel = FlightRecorder.createChannel("TIMESTAMP", LongSchema.INSTANCE);
         }
 
         @Override
         public void loop() {
             drive.updatePoseEstimate();
 
-            // Log data with full type safety
-            poseChannel.put(drive.getPose());
-            timestampChannel.put(System.nanoTime());
+            Fate.log("Robot/Pose", drive.getPose());
         }
     }
     ```
 
+To group related values, ask for a table once and log into it. For example,
+`val drive = Fate.table("Drive")` followed by `drive.log("leftVelocity", v)` logs to
+`Drive/leftVelocity`. Slashes in a path become folders in AdvantageScope.
+
 ## The schema system
 
-Most of the time you never write a schema. FateWeaver infers one from the type you hand it:
+Most of the time you never write a schema. FateWeaver infers one from the value you log:
 
 - Int, Long, Double, String, Boolean
 - Arrays, lists, sets and maps
@@ -78,7 +72,7 @@ Most of the time you never write a schema. FateWeaver infers one from the type y
 
 ### Writing a schema by hand
 
-When you care about the exact bytes, say so:
+When you care about the exact bytes, write the schema and pass it as the third argument:
 
 ```kotlin
 val optimizedSchema = CustomStructSchema<SensorReading>(
@@ -87,32 +81,36 @@ val optimizedSchema = CustomStructSchema<SensorReading>(
     componentSchemas = listOf(LongSchema, DoubleSchema, StringSchema),
     encoder = { reading ->
         listOf(
-            reading.timestamp / 1000000,  // Convert to milliseconds
-            String.format("%.3f", reading.value).toDouble(),  // Round precision
-            reading.sensorId.take(8)  // Truncate ID
+            reading.timestamp / 1000000,  // convert to milliseconds
+            String.format("%.3f", reading.value).toDouble(),  // round precision
+            reading.sensorId.take(8)  // truncate ID
         )
     }
 )
+
+Fate.log("Sensors/Optimized", reading, optimizedSchema)
 ```
+
+The first log to a path fixes its schema. Later calls reuse it.
 
 ### The schema registry
 
-Register a schema once and every later channel for that class picks it up:
+Register a schema once and every later path that logs that class picks it up:
 
 ```kotlin
 // Register once during initialization
 FateSchema.registerSchema<Pose2d>(customPoseSchema)
 
-// Every channel built from Pose2d now uses it
-val poseChannel = FlightRecorder.createChannel("Robot/Pose", Pose2d::class.java)
+// Every Pose2d you log from now on uses it
+Fate.log("Robot/Pose", drive.pose)
 ```
 
 ## Where to next
 
-1. [Installation](installation.md) - add FateWeaver to your FTC project
-2. [Getting started](getting-started.md) - your first logging OpMode
-3. [Schema system](schemas.md) - how types become bytes
-4. [Log management](log-management.md) - downloading and viewing your data
+1. [Installation](installation.md) adds FateWeaver to your FTC project.
+2. [Getting started](getting-started.md) walks through your first logging OpMode.
+3. [Schema system](schemas.md) explains how types become bytes.
+4. [Log management](log-management.md) covers downloading and viewing your data.
 
 ## Links
 
@@ -123,4 +121,4 @@ val poseChannel = FlightRecorder.createChannel("Robot/Pose", Pose2d::class.java)
 
 ---
 
-*FateWeaver is developed and maintained by the FTC community for the FTC community. Happy logging!* 🤖
+*FateWeaver is developed and maintained by the FTC community for the FTC community.*

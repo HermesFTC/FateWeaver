@@ -4,14 +4,15 @@ The registry maps a class to the schema used for it, everywhere.
 
 ## Automatic registration
 
-Creating a channel for a class looks in the registry first. On a miss, FateWeaver builds a schema by
-reflection (a `TypedClassSchema` if the class has an `AS_TYPE` constant, otherwise a
-`ReflectedClassSchema`), stores it, and hands back a channel using it. Every later channel for that
-class reuses the same schema, so the reflection cost is paid once.
+The first time you log a class, FateWeaver looks in the registry. On a miss, it builds a schema by
+reflection and stores it. That schema is a `TypedClassSchema` if the class has an `AS_TYPE` constant
+and a `ReflectedClassSchema` otherwise. Every later log of that class reuses the stored schema, so
+you pay the reflection cost once.
 
 ## Manual registration
 
-Register your own schema to override the reflected default:
+Register your own schema to replace the reflected default. After that, plain `log(name, value)`
+picks it up.
 
 === "Kotlin"
 
@@ -27,10 +28,9 @@ Register your own schema to override the reflected default:
     // Register globally
     FateSchema.registerSchema(Pose2d::class.java, optimizedPoseSchema)
 
-    // All future channels automatically use your custom schema
-    val poseChannel1 = FlightRecorder.createChannel("Robot/Pose", Pose2d::class.java)
-    val poseChannel2 = FlightRecorder.createChannel("Target/Pose", Pose2d::class.java)
-    // Both use optimizedPoseSchema
+    // Both paths use optimizedPoseSchema
+    Fate.log("Robot/Pose", robotPose)
+    Fate.log("Target/Pose", targetPose)
     ```
 
 === "Java"
@@ -47,21 +47,21 @@ Register your own schema to override the reflected default:
     // Register globally
     FateSchema.registerSchema(Pose2d.class, optimizedPoseSchema);
 
-    // All future channels automatically use your custom schema
-    FlightLogChannel<Pose2d> poseChannel1 =
-        FlightRecorder.createChannel("Robot/Pose", Pose2d.class);
-    FlightLogChannel<Pose2d> poseChannel2 =
-        FlightRecorder.createChannel("Target/Pose", Pose2d.class);
-    // Both use optimizedPoseSchema
+    // Both paths use optimizedPoseSchema
+    Fate.log("Robot/Pose", robotPose);
+    Fate.log("Target/Pose", targetPose);
     ```
+
+A registered schema also applies to the class when it is a field of another class or an element of a
+list or map. It wins for every parameterization of the class.
 
 ## Where to register
 
-Register in your OpMode's `init()`, before any channel exists. A schema registered after a channel
-was created does nothing for that channel, since the channel already has one.
+Register in your OpMode's `init()`, before anything logs that class. A path keeps the schema it had
+on its first log. If you register later, only new paths use it.
 
-Keep every registration in one place. Registering the same class twice overwrites silently, and
-that is much easier to spot when the calls sit next to each other.
+Keep every registration in one place. Registering the same class twice overwrites the first
+registration without a warning, and that is easier to spot when the calls sit next to each other.
 
 === "Kotlin"
 
@@ -114,4 +114,3 @@ that is much easier to spot when the calls sit next to each other.
             new CustomStructSchema<>(/* ... */);
     }
     ```
-

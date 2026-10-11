@@ -5,13 +5,28 @@ the data, so a reader can decode the file without knowing anything about your co
 
 ## What are schemas?
 
-Every channel has exactly one schema, and that schema fixes the channel's layout for the life of
-the log. It gives you the field names and types a viewer needs, and it makes a type mismatch a
-compile error rather than a plot that looks wrong three matches later.
+Every logged path has exactly one schema, and that schema fixes the path's layout until the program
+exits. It gives a viewer the field names and types it needs. The first `log` call to a path picks the
+schema, and a later value of a different type is skipped with a one-time warning instead of
+producing a plot that looks wrong three matches later.
+
+Most of the time you never name a schema. `Fate.log("Battery/Voltage", volts)` infers `DoubleSchema`
+from the value. This page covers what inference produces and how to pick a schema yourself.
+
+In Kotlin, import the `log` extension next to `Fate`. The examples below assume both imports:
+
+```kotlin
+import gay.zharel.fateweaver.telemetry.Fate
+import gay.zharel.fateweaver.telemetry.log
+```
+
+To use a schema you built, pass it as a third argument. `Fate.log(name, value, schema)` and
+`table.log(name, value, schema)` use that schema and skip inference. The first log to a path fixes
+its schema, so pass the same schema on every call.
 
 ## Schema types overview
 
-FateWeaver provides several categories of schemas:
+FateWeaver has three categories of schemas:
 
 ```mermaid
 graph TD
@@ -38,8 +53,9 @@ graph TD
 
 ## Primitive schemas
 
-Five singletons covering the types that need no configuration. Each has a fixed size, so nothing has
-to be measured before writing.
+Five singletons cover the types that need no configuration. Each has a fixed size, so nothing has
+to be measured before writing. You rarely pass these yourself, because `log` infers them from an
+`Int`, `Long`, `Double`, `String` or `Boolean`.
 
 ### IntSchema
 
@@ -48,165 +64,128 @@ Serializes 32-bit signed integers.
 === "Kotlin"
 
     ```kotlin
-    val encoderPositionChannel = FlightRecorder.createChannel(
-        "Motors/Encoder/Position",
-        IntSchema.INSTANCE
-    )
-
-    encoderPositionChannel.put(motor.currentPosition)
+    Fate.log("Motors/Encoder/Position", motor.currentPosition)
     ```
 
 === "Java"
 
     ```java
-    FlightLogChannel<Integer> encoderPositionChannel =
-        FlightRecorder.createChannel("Motors/Encoder/Position", IntSchema.INSTANCE);
-
-    encoderPositionChannel.put(motor.getCurrentPosition());
+    Fate.log("Motors/Encoder/Position", motor.getCurrentPosition());
     ```
 
 ### LongSchema
 
-Serializes 64-bit signed integers, commonly used for timestamps.
+Serializes 64-bit signed integers. Use it for counters and other whole numbers that outgrow an `Int`.
+You don't log timestamps yourself, because every message in a version 3 log already carries one, in
+nanoseconds.
 
 === "Kotlin"
 
     ```kotlin
-    val timestampChannel = FlightRecorder.createChannel(
-        "Timestamp",
-        LongSchema.INSTANCE
-    )
-
-    timestampChannel.put(System.nanoTime())
+    Fate.log("Loop/Count", loopCount.toLong())
     ```
 
 === "Java"
 
     ```java
-    FlightLogChannel<Long> timestampChannel =
-        FlightRecorder.createChannel("Timestamp", LongSchema.INSTANCE);
-
-    timestampChannel.put(System.nanoTime());
+    Fate.log("Loop/Count", (long) loopCount);
     ```
 
 ### DoubleSchema
 
 Serializes 64-bit floating-point numbers with full precision. `Float` fields and `FloatArray` use
 this too, widened on the way out, since the format has no float type. The conversion is exact, but
-the encoded value takes 8 bytes rather than 4.
+the encoded value takes 8 bytes instead of 4.
 
 === "Kotlin"
 
     ```kotlin
-    val voltageChannel = FlightRecorder.createChannel(
-        "Battery/Voltage",
-        DoubleSchema.INSTANCE
-    )
-
-    voltageChannel.put(voltageSensor.voltage)
+    Fate.log("Battery/Voltage", voltageSensor.voltage)
     ```
 
 === "Java"
 
     ```java
-    FlightLogChannel<Double> voltageChannel =
-        FlightRecorder.createChannel("Battery/Voltage", DoubleSchema.INSTANCE);
-
-    voltageChannel.put(voltageSensor.getVoltage());
+    Fate.log("Battery/Voltage", voltageSensor.getVoltage());
     ```
 
 ### StringSchema
 
-Serializes UTF-8 strings with length prefixes for efficiency.
+Serializes UTF-8 strings, each with a length prefix.
 
 === "Kotlin"
 
     ```kotlin
-    val statusChannel = FlightRecorder.createChannel(
-        "Robot/Status",
-        StringSchema.INSTANCE
-    )
-
-    statusChannel.put("Autonomous Active")
+    Fate.log("Robot/Status", "Autonomous Active")
     ```
 
 === "Java"
 
     ```java
-    FlightLogChannel<String> statusChannel =
-        FlightRecorder.createChannel("Robot/Status", StringSchema.INSTANCE);
-
-    statusChannel.put("Autonomous Active");
+    Fate.log("Robot/Status", "Autonomous Active");
     ```
 
 ### BooleanSchema
 
-Serializes boolean values as single bytes.
+Serializes booleans as single bytes.
 
 === "Kotlin"
 
     ```kotlin
-    val limitSwitchChannel = FlightRecorder.createChannel(
-        "Sensors/LimitSwitch",
-        BooleanSchema.INSTANCE
-    )
-
-    limitSwitchChannel.put(limitSwitch.isPressed)
+    Fate.log("Sensors/LimitSwitch", limitSwitch.isPressed)
     ```
 
 === "Java"
 
     ```java
-    FlightLogChannel<Boolean> limitSwitchChannel =
-        FlightRecorder.createChannel("Sensors/LimitSwitch", BooleanSchema.INSTANCE);
-
-    limitSwitchChannel.put(limitSwitch.isPressed());
+    Fate.log("Sensors/LimitSwitch", limitSwitch.isPressed());
     ```
 
 ## Collection schemas
 
 ### ArraySchema<T>
 
-Handles arrays of any supported type with length prefixes.
+Serializes arrays of any supported type, with a length prefix. Pass the schema explicitly when you
+want the boxed form. The Kotlin example logs an `Array<Double>`, and the Java one logs a `Double[]`.
 
 === "Kotlin"
 
     ```kotlin
-    val motorPowersSchema = ArraySchema(DoubleSchema.INSTANCE)
-    val motorPowersChannel = FlightRecorder.createChannel(
-        "Motors/Powers",
-        motorPowersSchema
-    )
+    val motorPowersSchema = ArraySchema(DoubleSchema)
 
-    motorPowersChannel.put(doubleArrayOf(0.8, 0.6, 0.7, 0.9))
+    Fate.log("Motors/Powers", arrayOf(0.8, 0.6, 0.7, 0.9), motorPowersSchema)
     ```
 
 === "Java"
 
     ```java
     ArraySchema<Double> motorPowersSchema = new ArraySchema<>(DoubleSchema.INSTANCE);
-    FlightLogChannel<Double[]> motorPowersChannel =
-        FlightRecorder.createChannel("Motors/Powers", motorPowersSchema);
 
-    motorPowersChannel.put(new Double[]{0.8, 0.6, 0.7, 0.9});
+    Fate.log("Motors/Powers", new Double[]{0.8, 0.6, 0.7, 0.9}, motorPowersSchema);
     ```
 
 !!! tip "Primitive arrays have their own schemas"
-    `DoubleArray`, `IntArray`, `LongArray` and `BooleanArray` get `DoubleArraySchema` and friends,
-    which write the same bytes as the boxed form with no allocation. You get them automatically
-    from `createChannel("Powers", DoubleArray::class.java)`.
+    `DoubleArray`, `IntArray`, `LongArray` and `BooleanArray` get `DoubleArraySchema` and the
+    matching ones for the other types. They write the same bytes as the boxed form and don't
+    allocate. Inference picks them for you, so `Fate.log("Powers", doubleArrayOf(0.8, 0.6))` needs
+    no schema argument.
 
 ### MapSchema<K, V>
 
-Handles maps with an entry count prefix. Keys aren't restricted to strings; any supported type works.
+Serializes maps with an entry count prefix. Keys don't have to be strings. Any supported type works.
+
+In Kotlin, `log` keeps the type arguments, so a `Map<String, Double>` is inferred without a schema.
+Java's two-argument `log` only sees the runtime class and can't log a map, so Java passes a schema.
 
 === "Kotlin"
 
     ```kotlin
-    val powersSchema = MapSchema(StringSchema.INSTANCE, DoubleSchema.INSTANCE)
-    val powersChannel = FlightRecorder.createChannel("Motors/Powers", powersSchema)
+    // Inferred from Map<String, Double>
+    Fate.log("Motors/Powers", mapOf("fl" to 0.8, "fr" to 0.6))
 
-    powersChannel.put(mapOf("fl" to 0.8, "fr" to 0.6))
+    // Or with an explicit schema
+    val powersSchema = MapSchema(StringSchema, DoubleSchema)
+    Fate.log("Motors/Powers", mapOf("fl" to 0.8, "fr" to 0.6), powersSchema)
     ```
 
 === "Java"
@@ -214,34 +193,34 @@ Handles maps with an entry count prefix. Keys aren't restricted to strings; any 
     ```java
     MapSchema<String, Double> powersSchema =
         new MapSchema<>(StringSchema.INSTANCE, DoubleSchema.INSTANCE);
-    FlightLogChannel<Map<String, Double>> powersChannel =
-        FlightRecorder.createChannel("Motors/Powers", powersSchema);
 
     Map<String, Double> powers = new LinkedHashMap<>();
     powers.put("fl", 0.8);
     powers.put("fr", 0.6);
-    powersChannel.put(powers);
+    Fate.log("Motors/Powers", powers, powersSchema);
     ```
 
 !!! warning "Homogeneous values only"
-    The format is fixed-shape, so every value in a map must share one type. `Map<String, Any>` cannot
-    be logged and is rejected when the schema is built. Entry order is not preserved as meaningful
-    information. A nullable value type such as `Map<String, Double?>` is fine and infers an
-    `OptionalSchema` for the value.
+    The format has a fixed shape, so every value in a map must share one type. `Map<String, Any>`
+    can't be logged. FateWeaver rejects it when it builds the schema and warns once. Entry order
+    carries no meaning in the log. A nullable value type such as `Map<String, Double?>` is fine and
+    infers an `OptionalSchema` for the value.
 
 ### EnumSchema<T>
 
-Efficiently serializes enums using ordinal values.
+Serializes enums as their ordinal.
 
 === "Kotlin"
 
     ```kotlin
     enum class AllianceColor { RED, BLUE }
 
-    val allianceSchema = EnumSchema(AllianceColor::class.java)
-    val allianceChannel = FlightRecorder.createChannel("Match/Alliance", allianceSchema)
+    // Inferred from the enum class
+    Fate.log("Match/Alliance", AllianceColor.RED)
 
-    allianceChannel.put(AllianceColor.RED)
+    // Or with an explicit schema
+    val allianceSchema = EnumSchema(AllianceColor::class.java)
+    Fate.log("Match/Alliance", AllianceColor.RED, allianceSchema)
     ```
 
 === "Java"
@@ -249,21 +228,22 @@ Efficiently serializes enums using ordinal values.
     ```java
     enum AllianceColor { RED, BLUE }
 
-    EnumSchema<AllianceColor> allianceSchema = new EnumSchema<>(AllianceColor.class);
-    FlightLogChannel<AllianceColor> allianceChannel =
-        FlightRecorder.createChannel("Match/Alliance", allianceSchema);
+    // Inferred from the enum class
+    Fate.log("Match/Alliance", AllianceColor.RED);
 
-    allianceChannel.put(AllianceColor.RED);
+    // Or with an explicit schema
+    EnumSchema<AllianceColor> allianceSchema = new EnumSchema<>(AllianceColor.class);
+    Fate.log("Match/Alliance", AllianceColor.RED, allianceSchema);
     ```
 
 ## Class schemas
 
-Four ways to turn one of your own classes into bytes, from zero-effort to full control.
+You have four ways to turn one of your own classes into bytes, from no effort to full control.
 
 ### ReflectedClassSchema<T>
 
-Built by reflecting over the class's public properties. This is what you get when you pass a class
-to `createChannel` and say nothing else.
+Built by reflecting over the class's public properties. This is what you get when you log an
+instance of your own class and name no schema.
 
 === "Kotlin"
 
@@ -275,10 +255,8 @@ to `createChannel` and say nothing else.
         val gearRatio: Double
     )
 
-    // FateWeaver automatically creates a ReflectedClassSchema
-    val configChannel = FlightRecorder.createChannel("Robot/Config", RobotConfig::class.java)
-
-    configChannel.put(RobotConfig(1.0, 4.0, 14.5, 1.5))
+    // FateWeaver infers a ReflectedClassSchema from the class
+    Fate.log("Robot/Config", RobotConfig(1.0, 4.0, 14.5, 1.5))
     ```
 
 === "Java"
@@ -299,34 +277,32 @@ to `createChannel` and say nothing else.
         }
     }
 
-    // FateWeaver automatically creates a ReflectedClassSchema
-    FlightLogChannel<RobotConfig> configChannel =
-        FlightRecorder.createChannel("Robot/Config", RobotConfig.class);
-
-    configChannel.put(new RobotConfig(1.0, 4.0, 14.5, 1.5));
+    // FateWeaver infers a ReflectedClassSchema from the class
+    Fate.log("Robot/Config", new RobotConfig(1.0, 4.0, 14.5, 1.5));
     ```
 
 #### How reflection works
 
-`ReflectedClassSchema` walks the class's public fields (public properties in Kotlin) and builds a
-schema for each field's type. That runs recursively, so nested classes work, and it reads the
-declared type of arrays, `List`/`Set` and `Map` fields to infer their element, key and value
+`ReflectedClassSchema` walks the class's public fields, which are public properties in Kotlin, and
+builds a schema for each field's type. It does this recursively, so nested classes work. It reads
+the declared type of arrays, `List`, `Set` and `Map` fields to infer their element, key and value
 schemas.
 
 !!! warning "Limitations"
-    - Private fields are skipped, with or without getters. Mark them public or use a
+    - Private fields are skipped, with or without getters. Make them public or use a
       `CustomStructSchema`.
-    - Every write reads each field through reflection, which a `CustomStructSchema` avoids.
+    - Every write reads each field through reflection. A `CustomStructSchema` avoids that cost.
     - Generic fields need concrete type arguments. `Map<String, Any>` and `List<*>` are rejected
       when the schema is built. Nullable arguments like `List<String?>` are fine and infer as
       optional elements.
     - A field must be declared nullable to hold null. A `Foo?` property infers an
-      `OptionalSchema`; a non-null one that turns out to be null throws and names the field.
+      `OptionalSchema`. A non-null property that turns out to be null fails the write, and the
+      warning names the field.
 
 ### TypedClassSchema<T>
 
-Enhanced version of ReflectedClassSchema that includes type information, 
-activated by the `AS_TYPE` static field (Java) or companion object property (Kotlin).
+A version of `ReflectedClassSchema` that also writes a type name into the log. You turn it on with
+an `AS_TYPE` static field in Java, or a companion object property in Kotlin.
 
 === "Kotlin"
 
@@ -341,8 +317,8 @@ activated by the `AS_TYPE` static field (Java) or companion object property (Kot
         }
     }
 
-    val sensorChannel = FlightRecorder.createChannel("Sensors/Reading", SensorReading::class.java)
-    // Automatically uses TypedClassSchema because of AS_TYPE
+    // Uses TypedClassSchema because of AS_TYPE
+    Fate.log("Sensors/Reading", SensorReading(System.nanoTime(), 3.2, "left"))
     ```
 
 === "Java"
@@ -362,20 +338,19 @@ activated by the `AS_TYPE` static field (Java) or companion object property (Kot
         }
     }
 
-    FlightLogChannel<SensorReading> sensorChannel =
-        FlightRecorder.createChannel("Sensors/Reading", SensorReading.class);
-    // Automatically uses TypedClassSchema because of AS_TYPE
+    // Uses TypedClassSchema because of AS_TYPE
+    Fate.log("Sensors/Reading", new SensorReading(System.nanoTime(), 3.2, "left"));
     ```
 
-#### Why bother with AS_TYPE
+#### Why use AS_TYPE
 
-The name goes into the log next to the fields, so a viewer or an analysis script can tell a
-`Pose2d` from any other three-double struct without matching on the channel name.
+The name goes into the log next to the fields. A viewer or an analysis script can then tell a
+`Pose2d` from any other three-double struct without matching on the path.
 
 ### CustomStructSchema<T>
 
 You name the components and supply a function that pulls them out of the object. Nothing is
-reflected, and nothing is written that you didn't ask for.
+reflected, and nothing is written that you didn't ask for. Pass the schema on every log call.
 
 === "Kotlin"
 
@@ -385,13 +360,13 @@ reflected, and nothing is written that you didn't ask for.
     val customPoseSchema = CustomStructSchema<Pose2d>(
         type = "Pose2d",
         componentNames = listOf("x", "y", "heading"),
-        componentSchemas = listOf(DoubleSchema.INSTANCE, DoubleSchema.INSTANCE, DoubleSchema.INSTANCE),
+        componentSchemas = listOf(DoubleSchema, DoubleSchema, DoubleSchema),
         encoder = { pose ->
             listOf(pose.x, pose.y, pose.heading)
         }
     )
 
-    val poseChannel = FlightRecorder.createChannel("Robot/Pose", customPoseSchema)
+    Fate.log("Robot/Pose", pose, customPoseSchema)
     ```
 
 === "Java"
@@ -412,13 +387,13 @@ reflected, and nothing is written that you didn't ask for.
         pose -> Arrays.asList(pose.x, pose.y, pose.heading)
     );
 
-    FlightLogChannel<Pose2d> poseChannel =
-        FlightRecorder.createChannel("Robot/Pose", customPoseSchema);
+    Fate.log("Robot/Pose", pose, customPoseSchema);
     ```
 
 #### Advanced custom schema examples
 
-**Data Transformation:**
+##### Data transformation
+
 === "Kotlin"
 
     ```kotlin
@@ -426,9 +401,11 @@ reflected, and nothing is written that you didn't ask for.
     val distanceSchema = CustomStructSchema<Double>(
         type = "Distance",
         componentNames = listOf("meters"),
-        componentSchemas = listOf(DoubleSchema.INSTANCE),
+        componentSchemas = listOf(DoubleSchema),
         encoder = { inches -> listOf(inches * 0.0254) }  // Convert inches to meters
     )
+
+    Fate.log("Drive/Distance", distanceInches, distanceSchema)
     ```
 
 === "Java"
@@ -441,9 +418,12 @@ reflected, and nothing is written that you didn't ask for.
         Arrays.asList(DoubleSchema.INSTANCE),
         inches -> Arrays.asList(inches * 0.0254)  // Convert inches to meters
     );
+
+    Fate.log("Drive/Distance", distanceInches, distanceSchema);
     ```
 
-**Selective Field Logging:**
+##### Selective field logging
+
 === "Kotlin"
 
     ```kotlin
@@ -457,11 +437,13 @@ reflected, and nothing is written that you didn't ask for.
     val selectiveSchema = CustomStructSchema<ComplexObject>(
         type = "ImportantData",
         componentNames = listOf("data", "time"),
-        componentSchemas = listOf(DoubleSchema.INSTANCE, LongSchema.INSTANCE),
+        componentSchemas = listOf(DoubleSchema, LongSchema),
         encoder = { obj ->
             listOf(obj.importantData, obj.timestamp)  // Only log important fields
         }
     )
+
+    Fate.log("Robot/Important", complexObject, selectiveSchema)
     ```
 
 === "Java"
@@ -473,6 +455,8 @@ reflected, and nothing is written that you didn't ask for.
         Arrays.asList(DoubleSchema.INSTANCE, LongSchema.INSTANCE),
         obj -> Arrays.asList(obj.importantData, obj.timestamp)  // Only log important fields
     );
+
+    Fate.log("Robot/Important", complexObject, selectiveSchema);
     ```
 
 ### TranslatedSchema<T, U>
@@ -480,31 +464,30 @@ reflected, and nothing is written that you didn't ask for.
 Converts a value to another type on the way out, then encodes that. You give it a function from
 `T` to `U` and a schema for `U`.
 
-This is the answer for a class you can't modify, from RoadRunner or any other library, and for
-wrappers you'd rather see unwrapped in the log. A `Rotation2d` becomes a plain double, and the plot
-is a heading in radians instead of a one-field struct.
+Use it for a class you can't modify, from RoadRunner or any other library, and for wrappers you
+would rather see unwrapped in the log. A `Rotation2d` becomes a plain double, so the plot shows a
+heading in radians instead of a one-field struct.
 
 #### Basic usage
 
 === "Kotlin"
 
     ```kotlin
-    // Example: You have a wrapper class but want to log the inner value
+    // You have a wrapper class but want to log the inner value
     data class Voltage(val value: Double)
 
     val voltageSchema = TranslatedSchema<Voltage, Double>(
-        baseSchema = DoubleSchema.INSTANCE,
+        baseSchema = DoubleSchema,
         toBase = { voltage -> voltage.value }
     )
 
-    val voltageChannel = FlightRecorder.createChannel("Battery/Voltage", voltageSchema)
-    voltageChannel.put(Voltage(12.6))  // Logs as 12.6 (double)
+    Fate.log("Battery/Voltage", Voltage(12.6), voltageSchema)  // Logs as 12.6 (double)
     ```
 
 === "Java"
 
     ```java
-    // Example: You have a wrapper class but want to log the inner value
+    // You have a wrapper class but want to log the inner value
     public class Voltage {
         public final double value;
         public Voltage(double value) { this.value = value; }
@@ -515,14 +498,12 @@ is a heading in radians instead of a one-field struct.
         voltage -> voltage.value
     );
 
-    FlightLogChannel<Voltage> voltageChannel =
-        FlightRecorder.createChannel("Battery/Voltage", voltageSchema);
-    voltageChannel.put(new Voltage(12.6));  // Logs as 12.6 (double)
+    Fate.log("Battery/Voltage", new Voltage(12.6), voltageSchema);  // Logs as 12.6 (double)
     ```
 
 #### Alternative constructor
 
-You can also construct `TranslatedSchema` by passing the target class directly:
+You can also pass the target class and let FateWeaver look up its schema:
 
 === "Kotlin"
 
@@ -531,7 +512,7 @@ You can also construct `TranslatedSchema` by passing the target class directly:
         baseClass = Double::class.java,
         toBase = { voltage -> voltage.value }
     )
-    // FateWeaver automatically finds/creates the schema for Double
+    // FateWeaver finds or creates the schema for Double
     ```
 
 === "Java"
@@ -541,17 +522,17 @@ You can also construct `TranslatedSchema` by passing the target class directly:
         Double.class,
         voltage -> voltage.value
     );
-    // FateWeaver automatically finds/creates the schema for Double
+    // FateWeaver finds or creates the schema for Double
     ```
 
 #### Advanced examples
 
-**Converting Library Types:**
+##### Converting library types
 
 === "Kotlin"
 
     ```kotlin
-    // Example: RoadRunner's Rotation2d to Double
+    // RoadRunner's Rotation2d to Double
     import com.acmerobotics.roadrunner.Rotation2d
 
     val rotationSchema = TranslatedSchema<Rotation2d, Double>(
@@ -559,14 +540,13 @@ You can also construct `TranslatedSchema` by passing the target class directly:
         toBase = { rotation -> rotation.toDouble() }
     )
 
-    val headingChannel = FlightRecorder.createChannel("Robot/Heading", rotationSchema)
-    headingChannel.put(Rotation2d.exp(Math.PI / 2))  // Logs as 1.5707... (double)
+    Fate.log("Robot/Heading", Rotation2d.exp(Math.PI / 2), rotationSchema)  // Logs as 1.5707... (double)
     ```
 
 === "Java"
 
     ```java
-    // Example: RoadRunner's Rotation2d to Double
+    // RoadRunner's Rotation2d to Double
     import com.acmerobotics.roadrunner.Rotation2d;
 
     TranslatedSchema<Rotation2d, Double> rotationSchema = new TranslatedSchema<>(
@@ -574,17 +554,15 @@ You can also construct `TranslatedSchema` by passing the target class directly:
         rotation -> rotation.toDouble()
     );
 
-    FlightLogChannel<Rotation2d> headingChannel =
-        FlightRecorder.createChannel("Robot/Heading", rotationSchema);
-    headingChannel.put(Rotation2d.exp(Math.PI / 2));  // Logs as 1.5707... (double)
+    Fate.log("Robot/Heading", Rotation2d.exp(Math.PI / 2), rotationSchema);  // Logs as 1.5707... (double)
     ```
 
-**Converting to Complex Types:**
+##### Converting to complex types
 
 === "Kotlin"
 
     ```kotlin
-    // Example: Convert a custom type to a data class with a registered schema
+    // Convert a custom type to a data class with a registered schema
     data class MotorState(val power: Double, val position: Int, val velocity: Double)
 
     class Motor(/* ... */) {
@@ -595,24 +573,23 @@ You can also construct `TranslatedSchema` by passing the target class directly:
 
     val motorSchema = TranslatedSchema<Motor, MotorState>(
         baseClass = MotorState::class.java,
-        toBase = { motor -> 
+        toBase = { motor ->
             MotorState(motor.getPower(), motor.getPosition(), motor.getVelocity())
         }
     )
 
-    val motorChannel = FlightRecorder.createChannel("Motors/FrontLeft", motorSchema)
-    motorChannel.put(frontLeftMotor)  // Converted to MotorState, then serialized
+    Fate.log("Motors/FrontLeft", frontLeftMotor, motorSchema)  // Converted to MotorState, then serialized
     ```
 
 === "Java"
 
     ```java
-    // Example: Convert a custom type to a data class with a registered schema
+    // Convert a custom type to a data class with a registered schema
     public class MotorState {
         public final double power;
         public final int position;
         public final double velocity;
-        
+
         public MotorState(double power, int position, double velocity) {
             this.power = power;
             this.position = position;
@@ -631,12 +608,10 @@ You can also construct `TranslatedSchema` by passing the target class directly:
         motor -> new MotorState(motor.getPower(), motor.getPosition(), motor.getVelocity())
     );
 
-    FlightLogChannel<Motor> motorChannel =
-        FlightRecorder.createChannel("Motors/FrontLeft", motorSchema);
-    motorChannel.put(frontLeftMotor);  // Converted to MotorState, then serialized
+    Fate.log("Motors/FrontLeft", frontLeftMotor, motorSchema);  // Converted to MotorState, then serialized
     ```
 
-**Enum to String Conversion:**
+##### Enum to string conversion
 
 === "Kotlin"
 
@@ -648,8 +623,7 @@ You can also construct `TranslatedSchema` by passing the target class directly:
         toBase = { mode -> mode.name }
     )
 
-    val modeChannel = FlightRecorder.createChannel("Drive/Mode", driveModeSchema)
-    modeChannel.put(DriveMode.FIELD_CENTRIC)  // Logs as "FIELD_CENTRIC" (string)
+    Fate.log("Drive/Mode", DriveMode.FIELD_CENTRIC, driveModeSchema)  // Logs as "FIELD_CENTRIC" (string)
     ```
 
 === "Java"
@@ -662,54 +636,55 @@ You can also construct `TranslatedSchema` by passing the target class directly:
         mode -> mode.name()
     );
 
-    FlightLogChannel<DriveMode> modeChannel =
-        FlightRecorder.createChannel("Drive/Mode", driveModeSchema);
-    modeChannel.put(DriveMode.FIELD_CENTRIC);  // Logs as "FIELD_CENTRIC" (string)
+    Fate.log("Drive/Mode", DriveMode.FIELD_CENTRIC, driveModeSchema);  // Logs as "FIELD_CENTRIC" (string)
     ```
 
 #### When to use TranslatedSchema
 
-| Situation | Use TranslatedSchema? | Alternative |
-|-----------|----------------------|-------------|
-| Wrapper class with single value | ✅ Yes - clean and simple | CustomStructSchema |
-| Library type you can't modify | ✅ Yes - perfect fit | CustomStructSchema |
-| Need to transform data | ✅ Yes - if converting to existing type | CustomStructSchema for custom format |
-| Complex multi-field conversion | ⚠️ Maybe - consider CustomStructSchema | CustomStructSchema |
-| Simple type unwrapping | ✅ Yes - most elegant solution | Direct field access |
+| Situation                      | Use TranslatedSchema? | Alternative                           |
+|--------------------------------|-----------------------|---------------------------------------|
+| Wrapper class with one value   | Yes                   | CustomStructSchema                    |
+| Library type you can't modify  | Yes                   | CustomStructSchema                    |
+| Converting to an existing type | Yes                   | CustomStructSchema for a custom shape |
+| Multi-field conversion         | Maybe                 | CustomStructSchema                    |
+| Unwrapping a simple type       | Yes                   | Read the field directly               |
 
 #### Performance considerations
 
-The translation function runs on every logged value, twice: once to size the output and once to
-encode it. The base schema is built once and reused, so nothing is reflected per write. Keep the
-function to field reads and arithmetic, and avoid allocating a temporary object in it if the channel
-is written every loop.
+The translation function runs on every logged value, twice. Once sizes the output and once encodes
+it. The base schema is built once and reused, so nothing is reflected per write. Keep the function
+to field reads and arithmetic. If you log the value every loop, don't allocate a temporary object
+in it.
 
-!!! tip "Combining with Schema Registry"
-    You can register `TranslatedSchema` instances globally to use them automatically:
-    
+!!! tip "Combining with the schema registry"
+    You can register a `TranslatedSchema` globally so plain `log` calls use it:
+
     ```kotlin
     FateSchema.registerSchema(Voltage::class.java, voltageSchema)
-    
-    // Now all Voltage channels automatically use the translation
-    val channel = FlightRecorder.createChannel("Battery/Voltage", Voltage::class.java)
+
+    // Plain log now uses the translation for every Voltage
+    Fate.log("Battery/Voltage", Voltage(12.6))
     ```
 
 ## Schema registry
 
-The schema registry provides global schema management and reuse.
+The registry maps a class to the schema used for it everywhere. See the
+[registry page](schemas/registry.md) for more.
 
 ### Automatic registration
 
-When you create a channel for a class, FateWeaver automatically:
+When you log a value of a class that has no schema yet, FateWeaver does four things:
 
-1. Checks if a schema is already registered for that class
-2. If not, creates an appropriate schema (Reflected or Typed based on AS_TYPE)
-3. Registers the schema for future use
-4. Returns a channel using the registered schema
+1. Checks whether a schema is registered for that class.
+2. If not, builds one by reflection, a `TypedClassSchema` if the class has `AS_TYPE` and a
+   `ReflectedClassSchema` otherwise.
+3. Registers that schema for later use.
+4. Creates the path with the registered schema.
 
 ### Manual registration
 
-You can register custom schemas to override the defaults:
+Register your own schema to replace the default. After that, plain `log(name, value)` uses it, so
+you don't pass the schema on each call.
 
 === "Kotlin"
 
@@ -718,17 +693,16 @@ You can register custom schemas to override the defaults:
     val optimizedPoseSchema = CustomStructSchema<Pose2d>(
         type = "Pose2d",
         componentNames = listOf("x", "y", "theta"),
-        componentSchemas = listOf(DoubleSchema.INSTANCE, DoubleSchema.INSTANCE, DoubleSchema.INSTANCE),
+        componentSchemas = listOf(DoubleSchema, DoubleSchema, DoubleSchema),
         encoder = { pose -> listOf(pose.position.x, pose.position.y, pose.heading.toDouble()) }
     )
 
     // Register globally
     FateSchema.registerSchema(Pose2d::class.java, optimizedPoseSchema)
 
-    // All future channels automatically use your custom schema
-    val poseChannel1 = FlightRecorder.createChannel("Robot/Pose", Pose2d::class.java)
-    val poseChannel2 = FlightRecorder.createChannel("Target/Pose", Pose2d::class.java)
-    // Both use optimizedPoseSchema
+    // Every later log of a Pose2d uses your schema
+    Fate.log("Robot/Pose", pose)
+    Fate.log("Target/Pose", targetPose)
     ```
 
 === "Java"
@@ -745,21 +719,19 @@ You can register custom schemas to override the defaults:
     // Register globally
     FateSchema.registerSchema(Pose2d.class, optimizedPoseSchema);
 
-    // All future channels automatically use your custom schema
-    FlightLogChannel<Pose2d> poseChannel1 =
-        FlightRecorder.createChannel("Robot/Pose", Pose2d.class);
-    FlightLogChannel<Pose2d> poseChannel2 =
-        FlightRecorder.createChannel("Target/Pose", Pose2d.class);
-    // Both use optimizedPoseSchema
+    // Every later log of a Pose2d uses your schema
+    Fate.log("Robot/Pose", pose);
+    Fate.log("Target/Pose", targetPose);
     ```
 
 ### Where to register
 
-Register in your OpMode's `init()`, before any channel exists. A schema registered after a channel
-was created does nothing for that channel, since the channel already has one.
+Register in your OpMode's `init()`, before anything logs a value of that class. A path keeps the
+schema it got on its first log, so a schema registered afterward does nothing for paths that
+already exist.
 
-Keep every registration in one place. Registering the same class twice overwrites silently, and
-that is much easier to spot when the calls sit next to each other.
+Keep every registration in one place. Registering the same class twice overwrites the first
+registration without a warning, and the calls are easy to compare when they sit next to each other.
 
 === "Kotlin"
 
@@ -815,50 +787,63 @@ that is much easier to spot when the calls sit next to each other.
 
 ## Schema selection guide
 
-Choose the right schema type for your needs:
+Pick the schema from what you are logging:
 
-| Use Case                            | Recommended Schema         | Reason                     |
-|-------------------------------------|----------------------------|----------------------------|
-| Simple values (int, double, string) | Primitive Schemas          | Optimal performance        |
-| Arrays of primitives                | ArraySchema                | Built-in support           |
-| Lists and sets                      | ArraySchema (inferred)     | Same wire format as arrays |
-| Maps with a single value type       | MapSchema                  | Built-in support           |
-| Enums                               | EnumSchema                 | Efficient ordinal encoding |
-| Simple data classes                 | ReflectedClassSchema       | Automatic, no setup        |
-| Polymorphic logging                 | TypedClassSchema (AS_TYPE) | Type information included  |
-| Performance-critical                | CustomStructSchema         | Complete control           |
-| Unit conversion                     | CustomStructSchema         | Transform during logging   |
-| Selective logging                   | CustomStructSchema         | Choose which fields to log |
+| What you log                        | Schema                     | Why                                   |
+|-------------------------------------|----------------------------|---------------------------------------|
+| Simple values (int, double, string) | Primitive schemas          | Inferred, fixed size                  |
+| Arrays                              | ArraySchema                | Inferred, length prefix               |
+| Lists and sets                      | ArraySchema (inferred)     | Same bytes as an array                |
+| Maps with one value type            | MapSchema                  | Inferred in Kotlin, explicit in Java  |
+| Enums                               | EnumSchema                 | Stored as a 4-byte ordinal            |
+| Simple data classes                 | ReflectedClassSchema       | Inferred, no setup                    |
+| Classes a viewer should recognize   | TypedClassSchema (AS_TYPE) | Writes the type name into the log     |
+| Hot paths                           | CustomStructSchema         | No reflection on each write           |
+| Unit conversion                     | CustomStructSchema         | Converts in the encoder               |
+| Logging only some fields            | CustomStructSchema         | You choose which fields to write      |
 
 ## Troubleshooting schemas
 
+FateWeaver never throws into your robot code. When it can't build a schema or log a value, it
+warns once and skips the value. These are the usual causes.
+
 ### Common issues
 
-**"Cannot create schema for class"**
+**"Could not log ...: no schema for ..."**
 ```kotlin
-// Problem: Class has no public fields
+// Problem: the class has no public fields
 data class PrivateFields(private val x: Int)
 
-// Solution: Use CustomStructSchema or make fields public
+// Solution: use CustomStructSchema or make the fields public
 data class PublicFields(val x: Int)
 ```
 
-**"Unsupported field type"**
+**Unsupported field type**
 ```kotlin
-// Problem: Using unsupported types
-data class BadClass(val lambda: () -> Unit)  // Functions not supported
+// Problem: functions have no schema
+data class BadClass(val lambda: () -> Unit)
 
-// Solution: Use only supported types or CustomStructSchema
+// Solution: use supported types or a CustomStructSchema
 data class GoodClass(val value: Double)
 ```
 
-**Channels using the wrong schema**
+**A value is skipped with "A path keeps one type"**
+```kotlin
+// Problem: the first log fixed "Arm/Target" as a Double
+Fate.log("Arm/Target", 0.5)
+Fate.log("Arm/Target", "extended")  // skipped, warns once
+
+// Solution: use one type per path, or a different name
+Fate.log("Arm/State", "extended")
+```
+
+**Paths using the wrong schema**
 ```kotlin
 // Problem: registering twice. The second call overwrites the first without
-// complaining, and channels created before it keep the old schema.
+// a warning, and paths that already logged keep the old schema.
 FateSchema.registerSchema(MyClass::class.java, schemaV1)
 // Later...
 FateSchema.registerSchema(MyClass::class.java, schemaV2)
 
-// Solution: register each schema once, before any channel exists
+// Solution: register each schema once, before anything logs that class
 ```
