@@ -37,14 +37,19 @@ private class RecordingSink : FateSink {
     }
 }
 
-/** Writes two channels and three messages, the fixture every test here shares. */
+/**
+ * Writes two channels and three messages, the fixture every test here shares.
+ *
+ * The message timestamps are fixed rather than read from the clock, so two writers fed this
+ * fixture produce identical bytes.
+ */
 private fun writeSample(writer: FateLogWriter) {
     val timestamps = writer.createChannel("TIMESTAMP", LongSchema)
     val voltage = writer.createChannel("Battery/Voltage", DoubleSchema)
 
-    timestamps.put(1_000L)
-    voltage.put(12.4)
-    timestamps.put(2_000L)
+    writer.write(timestamps, 1_000L, 10L)
+    writer.write(voltage, 12.4, 20L)
+    writer.write(timestamps, 2_000L, 30L)
 }
 
 class FateSinkTest {
@@ -57,7 +62,7 @@ class FateSinkTest {
         assertEquals(2, sink.schemas.size, "one schema entry per channel")
         assertEquals(3, sink.messages.size, "one message entry per put")
 
-        assertContentEquals(byteArrayOf(0x52, 0x52, 0x00, 0x02), sink.headers.single())
+        assertContentEquals(byteArrayOf(0x52, 0x52, 0x00, 0x03), sink.headers.single())
 
         // The header must come first, and a channel's schema entry must precede any message
         // referencing it, or a reader could not resolve the channel index.
@@ -87,6 +92,7 @@ class FateSinkTest {
 
         assertEquals(listOf("TIMESTAMP", "Battery/Voltage"), schemas.map { it.channelName })
         assertEquals(listOf(1_000L, 12.4, 2_000L), messages.map { it.data })
+        assertEquals(listOf(10L, 20L, 30L), messages.map { it.timestamp })
     }
 
     @Test

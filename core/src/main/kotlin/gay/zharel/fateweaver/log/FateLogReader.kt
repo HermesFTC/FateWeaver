@@ -37,11 +37,15 @@ sealed class FateLogEntry {
 
     /**
      * Message entry containing data for a channel.
+     *
+     * [timestamp] is when the value was logged, in nanoseconds on the logging clock, or `null` for
+     * logs older than version 3, which did not record one.
      */
     data class Message<T>(
         val channelIndex: Int,
         val channelName: String,
-        val data: T
+        val data: T,
+        val timestamp: Long? = null
     ) : FateLogEntry()
 }
 
@@ -270,10 +274,18 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
             throw IllegalArgumentException("Invalid channel index: $channelIndex. Only ${channels.size} channels registered.")
         }
 
+        val timestamp = if (version >= TIMESTAMPED_VERSION) {
+            val timestampBytes = ByteArray(8)
+            stream.read(timestampBytes)
+            ByteBuffer.wrap(timestampBytes).long
+        } else {
+            null
+        }
+
         val channelInfo = channels[channelIndex]
         val data = readObject(channelInfo.schema)
 
-        return FateLogEntry.Message(channelIndex, channelInfo.name, data)
+        return FateLogEntry.Message(channelIndex, channelInfo.name, data, timestamp)
     }
 
     /**

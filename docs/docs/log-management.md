@@ -78,10 +78,12 @@ way for your platform.
 `File` → `Open Log(s)...`, pick your `.fate` file, and wait for the parse. Your channels show up in
 the data tree on the left.
 
-!!! warning "Requires AdvantageScope with FateWeaver v2 support"
-    Logs are written with format version 2, which added the MAP and OPTIONAL schema tags. An older
-    AdvantageScope rejects the file outright with an unsupported-version message rather than
-    half-reading it. Older `.fate.log` files still open, since version 1 remains readable.
+!!! warning "Requires AdvantageScope with FateWeaver v3 support"
+    Logs are written with format version 3, which timestamps every message (version 2 added the MAP
+    and OPTIONAL schema tags). An older AdvantageScope rejects the file outright with an
+    unsupported-version message rather than half-reading it. Older logs still open in a build that
+    supports their version, since versions 1 and 2 remain readable, but they carry no per-message
+    timestamps.
 
 ### Working with the data
 

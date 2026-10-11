@@ -22,11 +22,11 @@ class FateLogVersionTest {
         ByteBuffer.allocate(4).put(MAGIC.toByteArray(Charsets.UTF_8)).putShort(version).array()
 
     @Test
-    fun writerEmitsVersion2() {
+    fun writerEmitsVersion3() {
         val bytes = ByteArrayOutputStream()
         FateLogWriter(bytes).close()
-        assertEquals(2.toShort(), VERSION)
-        assertEquals(headerOf(2).toList(), bytes.toByteArray().take(4))
+        assertEquals(3.toShort(), VERSION)
+        assertEquals(headerOf(3).toList(), bytes.toByteArray().take(4))
     }
 
     @Test
@@ -39,7 +39,41 @@ class FateLogVersionTest {
     @Test
     fun readerRejectsUnknownVersion() {
         assertThrows(IllegalArgumentException::class.java) {
-            FateLogReader(ByteArrayInputStream(headerOf(3)))
+            FateLogReader(ByteArrayInputStream(headerOf(4)))
+        }
+    }
+
+    @Test
+    fun version3MessagesCarryATimestamp() {
+        val bytes = ByteArrayOutputStream()
+        FateLogWriter(bytes).use { writer ->
+            writer.write(writer.createChannel("voltage", DoubleSchema), 12.4, 1_234_567_890L)
+        }
+
+        val message = FateLogReader(ByteArrayInputStream(bytes.toByteArray())).use {
+            it.readAll().filterIsInstance<FateLogEntry.Message<*>>().single()
+        }
+        assertEquals(1_234_567_890L, message.timestamp)
+        assertEquals(12.4, message.data)
+    }
+
+    @Test
+    fun olderLogsStillReadWithoutATimestamp() {
+        // Entries are version-independent except for the message prefix, so a version 2 log is a
+        // version 3 schema entry with a message that has no timestamp slot.
+        val schemaEntry = ByteArrayOutputStream().let { out ->
+            FateLogWriter(out).use { it.createChannel("voltage", DoubleSchema) }
+            out.toByteArray().drop(4).toByteArray()
+        }
+        val message = ByteBuffer.allocate(16).putInt(1).putInt(0).putDouble(12.4).array()
+
+        for (version in listOf<Short>(1, 2)) {
+            val log = headerOf(version) + schemaEntry + message
+            val entry = FateLogReader(ByteArrayInputStream(log)).use {
+                it.readAll().filterIsInstance<FateLogEntry.Message<*>>().single()
+            }
+            assertEquals(12.4, entry.data)
+            assertEquals(null, entry.timestamp)
         }
     }
 

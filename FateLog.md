@@ -1,4 +1,4 @@
-# FateWeaver Log File Format Specification, Version 2
+# FateWeaver Log File Format Specification, Version 3
 
 A compact binary logging format designed for high‑speed, low‑overhead recording and offline analysis of structured telemetry produced by FateWeaver. This document describes the format implemented by the core module reader/writer APIs.
 
@@ -21,7 +21,7 @@ Robotics and embedded applications generate diverse telemetry at high rates. Tex
   A binary descriptor that defines how objects of a given type are encoded, including nested structures, arrays, and enums. Schemas are tagged by a TypeRegistry value.
 
 - Message
-  A data record for a specific channel that encodes one object according to the channel schema.
+  A data record for a specific channel that encodes one object according to the channel schema. Since version 3 a message also records when it was logged.
 
 ## Design Overview
 
@@ -73,11 +73,11 @@ This model supports heterogeneous logging scenarios where different subsystems l
 The file begins with exactly 4 bytes:
 
 - 2‑byte ASCII magic string: "RR"
-- 2‑byte unsigned version number (as a 16‑bit short). Current version: 2
+- 2‑byte unsigned version number (as a 16‑bit short). Current version: 3
 
 If the magic does not match, or the version is one the reader does not implement, the file must be rejected.
 
-Example header bytes (hex): 52 52 00 02
+Example header bytes (hex): 52 52 00 03
 
 ## Entries
 
@@ -103,7 +103,12 @@ Multiple channels are allowed; schemas are independent and can be nested.
 Carries one payload value for a previously announced channel. Format:
 
 - 4 bytes: channel index (int) — must be a valid index referencing a prior Schema entry
+- 8 bytes: timestamp (long) — version 3 and later only. Nanoseconds on a monotonic clock. The origin is the writer's choice (the reference telemetry API counts from when its registry was created), so only differences between timestamps in the same log mean anything.
 - Payload bytes: object encoded according to the channel’s schema
+
+Under a version 1 or 2 header the timestamp is absent and the payload follows the channel index directly.
+
+Timestamps need not increase from one message to the next. A writer stamps a value with the time it was produced, and several threads may log at once, so entries can land in the stream slightly out of order. Readers that need time order should sort by timestamp.
 
 ## Schema Encoding
 
@@ -198,7 +203,7 @@ All numbers are big‑endian.
 
 ## Versioning
 
-- Header version is a 16‑bit integer. Current version is 2.
+- Header version is a 16‑bit integer. Current version is 3.
 - Readers must reject files with unsupported versions; unsupported versions may have incompatible schema tags or entry formats and readers may not know how to skip unknown entries.
 - Schema tags (TypeRegistry values) are stable and part of the wire contract.
 - Both schema additions and changes will cause version updates.
@@ -212,13 +217,15 @@ All numbers are big‑endian.
   - Removes unnecessary zero bytes from array schema entries
 - Version 2:
   - Adds MAP and OPTIONAL schema tags
+- Version 3:
+  - Adds an 8-byte timestamp to every message entry, between the channel index and the payload. Schema encodings are unchanged.
 
 ## Examples
 
 Below are illustrative, not exhaustive, and omit some lengths for brevity. All ints are big‑endian.
 
 1) Header
-   - Magic "RR" + version 2 → 52 52 00 02
+   - Magic "RR" + version 3 → 52 52 00 03
 
 2) Declare a channel named "poses" with schema: ARRAY of CUSTOM with fields { x: DOUBLE, y: DOUBLE }
    - Entry kind: 00 00 00 00
@@ -232,6 +239,7 @@ Below are illustrative, not exhaustive, and omit some lengths for brevity. All i
 3) Message with two poses for channel index 0
    - Entry kind: 00 00 00 01
    - Channel index: 00 00 00 00
+   - Timestamp: 00 00 00 00 3B 9A CA 00 (1 000 000 000 ns)
    - Array length: 00 00 00 02
    - Pose[0]: x(double) 40 00 00 00 00 00 00 00; y(double) 40 08 00 00 00 00 00 00
    - Pose[1]: x(double) 40 10 00 00 00 00 00 00; y(double) 40 14 00 00 00 00 00 00
@@ -242,7 +250,7 @@ Below are illustrative, not exhaustive, and omit some lengths for brevity. All i
    - Schema: MAP tag 00 00 00 08
      - Key schema: STRING 00 00 00 04
      - Value schema: DOUBLE 00 00 00 03
-   - Entry kind: 00 00 00 01; channel index: 00 00 00 00
+   - Entry kind: 00 00 00 01; channel index: 00 00 00 00; timestamp: 00 00 00 00 77 35 94 00 (2 000 000 000 ns)
      - Entry count: 00 00 00 02
      - Entry[0]: key length 00 00 00 02; 66 6C ("fl"); value 3F E0 00 00 00 00 00 00 (0.5)
      - Entry[1]: key length 00 00 00 02; 66 72 ("fr"); value BF E0 00 00 00 00 00 00 (‑0.5)
@@ -250,7 +258,7 @@ Below are illustrative, not exhaustive, and omit some lengths for brevity. All i
 ## Notes
 
 - Endianness is big‑endian for all multi‑byte primitives.
-- There is no global timestamp; include time fields in your schemas if needed.
+- Version 3 timestamps are per message. Logs older than version 3 have none, so include a time field in your own schemas if you need one there.
 - Strings are UTF‑8 with a 32‑bit length prefix.
 - Readers must validate channel indices and schema tags and should fail fast on malformed data.
 

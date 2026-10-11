@@ -5,6 +5,8 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
 import java.nio.ByteBuffer
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.reflect.KClass
 import kotlin.reflect.KType
 import kotlin.reflect.typeOf
@@ -15,10 +17,16 @@ const val MAGIC = "RR"
 /**
  * Version number written into the header of new FateWeaver logs.
  */
-const val VERSION: Short = 2
+const val VERSION: Short = 3
 
 /** Header versions this library can read. */
-val SUPPORTED_VERSIONS: Set<Short> = setOf(1, 2)
+val SUPPORTED_VERSIONS: Set<Short> = setOf(1, 2, 3)
+
+/** First version whose message entries carry a timestamp. */
+internal const val TIMESTAMPED_VERSION: Short = 3
+
+/** Entry kind (4), channel index (4) and timestamp (8) ahead of every message payload. */
+private const val MESSAGE_PREFIX_SIZE = 16
 
 /**
  * A named stream of typed data within a FateWeaver log.
@@ -55,7 +63,13 @@ interface LogChannel<T> {
  *
  * A 4-byte header of magic bytes and a version, then a run of entries. An entry is either a schema
  * entry (type 0) defining a channel, or a message entry (type 1) carrying one value for a channel
- * already defined.
+ * already defined. Since version 3 every message entry also carries the time it was logged, in
+ * nanoseconds, so readers can line channels up without a hand-written timestamp channel.
+ *
+ * ## Threading
+ *
+ * A writer may be shared between threads. Entries reach the sink one at a time, in an order where
+ * a channel's schema entry always precedes its first message.
  *
  * ## Example
  *
@@ -86,7 +100,14 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
         sink.header(headerBuffer.array())
     }
 
-    private val channels = mutableListOf<WriterChannel<*>>()
+    /** Orders every call into [sink], and guards channel registration. */
+    private val lock = Any()
+
+    /**
+     * Appended to only under [lock]. Copy-on-write so the write path can look channels up without
+     * taking it; channels are added rarely and written constantly.
+     */
+    private val channels = CopyOnWriteArrayList<WriterChannel<*>>()
 
     /**
      * Adds a channel to the log and immediately writes its schema definition.
@@ -101,7 +122,7 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
      * @throws IllegalArgumentException if a channel with the same name already exists
      * @throws IllegalArgumentException if the channel belongs to a different log writer
      */
-    fun <T> addChannel(channel: WriterChannel<T>): WriterChannel<T> {
+    fun <T> addChannel(channel: WriterChannel<T>): WriterChannel<T> = synchronized(lock) {
         // Check for duplicate names
         require(channels.none { it.name == channel.name }) {
             "Channel with name '${channel.name}' already exists"
@@ -113,9 +134,8 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
             "Channel belongs to a different log writer"
         }
 
-        channels.add(channel)
-        // Write schema entry immediately
-
+        // Encode before registering, so a schema that fails to encode leaves no half-added channel
+        // behind to shift every later index.
         val chBytes = channel.name.toByteArray(Charsets.UTF_8)
         val buffer = ByteBuffer.allocate(8 + chBytes.size + channel.schema.schemaSize)
         buffer.putInt(0) // schema entry
@@ -125,9 +145,13 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
         require(!buffer.hasRemaining()) {
             "encoded schema does not match reported size: ${buffer.remaining()} bytes remaining"
         }
+
+        channel.index = channels.size
+        channels.add(channel)
+        // Write schema entry immediately
         sink.schemaEntry(buffer.array())
 
-        return channel
+        channel
     }
 
     /**
@@ -208,7 +232,7 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
         createChannel(name, FateSchema.schemaOfType(typeOf<T>()) as FateSchema<T>)
 
     /**
-     * Writes an object to the specified channel.
+     * Writes an object to the specified channel, stamped with the current [System.nanoTime].
      *
      * If the channel is not yet registered with this writer, it will be automatically
      * added before writing the object. The object is serialized using the channel's
@@ -218,23 +242,35 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
      * @param channel The channel to write to
      * @param obj The object to write
      */
-    fun <T> write(channel: LogChannel<T>, obj: T) {
-        var index = channels.indexOf(boundChannel(channel))
+    fun <T> write(channel: LogChannel<T>, obj: T) = write(channel, obj, System.nanoTime())
 
-        if (index < 0) {
-            addChannel(channel)
-            index = channels.lastIndex
-        }
+    /**
+     * Writes an object to the specified channel, stamped with [timestamp].
+     *
+     * Use this when the time the value was produced differs from the time it is written, or when
+     * several writers must agree on one timestamp. [timestamp] is in nanoseconds and should come
+     * from the same clock for every write to a log, since readers compare them.
+     *
+     * @param T The type of the object being written
+     * @param channel The channel to write to
+     * @param obj The object to write
+     * @param timestamp When the value was produced, in nanoseconds
+     */
+    fun <T> write(channel: LogChannel<T>, obj: T, timestamp: Long) {
+        val index = boundChannel(channel).index
 
+        // Encoding happens outside the lock: it is the expensive part, and nothing in it touches
+        // shared state. Only the hand-off to the sink has to be ordered.
         val objSize = channel.schema.objSize(obj)
-        val buffer = ByteBuffer.allocate(8 + objSize)
+        val buffer = ByteBuffer.allocate(MESSAGE_PREFIX_SIZE + objSize)
         buffer.putInt(1) // message entry
         buffer.putInt(index) // channel index
+        buffer.putLong(timestamp)
         channel.schema.encodeObject(buffer, obj)
         require(!buffer.hasRemaining()) {
             "encoded object does not match reported size: ${buffer.remaining()} bytes remaining"
         }
-        sink.messageEntry(buffer.array())
+        synchronized(lock) { sink.messageEntry(buffer.array()) }
     }
 
     /**
@@ -246,7 +282,7 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
      * into an error naming both types. Only parameterized types go in here. Everything else takes
      * its schema from the runtime class, which cannot disagree with itself.
      */
-    private val declaredTypes = mutableMapOf<String, KType>()
+    private val declaredTypes = ConcurrentHashMap<String, KType>()
 
     /**
      * Writes an object to a channel identified by name, inferring the schema from the object's
@@ -296,28 +332,32 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
      * type arguments or `null`, meaning the runtime class is the better source.
      */
     private fun writeResolved(channelName: String, obj: Any, parameterized: KType?) {
-        // Find existing channel by name
-        val existingChannel = channels.find { it.name == channelName }
+        // Look up and create under one lock, so two threads writing a new name at once cannot
+        // both decide to create it.
+        val channel = synchronized(lock) {
+            val existingChannel = channels.find { it.name == channelName }
 
-        if (existingChannel != null) {
-            checkDeclaredType(channelName, parameterized)
+            if (existingChannel != null) {
+                checkDeclaredType(channelName, parameterized)
 
-            @Suppress("UNCHECKED_CAST")
-            write(existingChannel as WriterChannel<Any>, obj)
-        } else {
-            // Create new channel on-demand
-            @Suppress("UNCHECKED_CAST")
-            val schema = if (parameterized != null) {
-                FateSchema.schemaOfType(parameterized)
+                @Suppress("UNCHECKED_CAST")
+                existingChannel as WriterChannel<Any>
             } else {
-                FateSchema.schemaOfClass(obj.javaClass)
-            } as FateSchema<Any>
+                // Create new channel on-demand
+                @Suppress("UNCHECKED_CAST")
+                val schema = if (parameterized != null) {
+                    FateSchema.schemaOfType(parameterized)
+                } else {
+                    FateSchema.schemaOfClass(obj.javaClass)
+                } as FateSchema<Any>
 
-            val newChannel = WriterChannel(channelName, schema)
-            addChannel(newChannel)
-            if (parameterized != null) declaredTypes[channelName] = parameterized
-            write(newChannel, obj)
+                val newChannel = addChannel(WriterChannel(channelName, schema))
+                if (parameterized != null) declaredTypes[channelName] = parameterized
+                newChannel
+            }
         }
+
+        write(channel, obj)
     }
 
     /**
@@ -369,6 +409,13 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
         val writer: FateLogWriter get() = this@FateLogWriter
 
         /**
+         * Position in the writer's channel list, which is the index messages carry on the wire.
+         * `-1` until the channel is added. Set once, under the writer's lock, before the channel
+         * becomes visible to any other thread.
+         */
+        internal var index: Int = -1
+
+        /**
          * Writes an object to this channel.
          *
          * This is equivalent to calling [FateLogWriter.write] with this channel.
@@ -401,14 +448,23 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
      * @return A [WriterChannel] bound to this writer
      */
     private fun <T> boundChannel(channel: LogChannel<T>): WriterChannel<T> {
-        val found = channels.find { it.name == channel.name }
-
-        if (found != null) {
+        // Fast path for the common case, a channel this writer made and already registered: no
+        // name scan, no lock.
+        if (channel is WriterChannel<*> && channel.writer === this && channel.index >= 0) {
             @Suppress("UNCHECKED_CAST")
-            return found as WriterChannel<T>
+            return channel as WriterChannel<T>
         }
 
-        return addChannel(WriterChannel(channel.name, channel.schema))
+        return synchronized(lock) {
+            val found = channels.find { it.name == channel.name }
+
+            if (found != null) {
+                @Suppress("UNCHECKED_CAST")
+                found as WriterChannel<T>
+            } else {
+                addChannel(WriterChannel(channel.name, channel.schema))
+            }
+        }
     }
 
     override fun toString() = "LogWriter($sink)"
