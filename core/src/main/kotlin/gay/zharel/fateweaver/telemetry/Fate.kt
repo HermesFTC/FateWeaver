@@ -1,5 +1,6 @@
 package gay.zharel.fateweaver.telemetry
 
+import gay.zharel.fateweaver.schemas.FateSchema
 import kotlin.reflect.KType
 import kotlin.reflect.typeOf
 
@@ -51,6 +52,14 @@ object Fate {
      */
     @JvmStatic
     fun logTyped(name: String, value: Any, type: KType) = root.logTyped(name, value, type)
+
+    /**
+     * Logs [value] at [name] using [schema] instead of inferring one.
+     *
+     * @see FateTable.log
+     */
+    @JvmStatic
+    fun <T : Any> log(name: String, value: T, schema: FateSchema<T>) = root.log(name, value, schema)
 }
 
 /**

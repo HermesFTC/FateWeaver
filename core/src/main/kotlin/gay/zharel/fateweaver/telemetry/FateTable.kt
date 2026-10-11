@@ -59,7 +59,7 @@ fun interface FateLoggable {
  * The schema of a value comes from its type, the same way [gay.zharel.fateweaver.log.FateLogWriter]
  * infers it. In Kotlin, `log` is a reified extension, so a parameterized value such as a
  * `Map<String, Double>` keeps its type arguments. Java sees [logErased] as `log`. It only has the
- * runtime class to go on, so it rejects maps and collections.
+ * runtime class to go on, so it rejects maps and collections. Pass a schema to log one from Java.
  *
  * @property path The slash-separated path of this table, empty for the root.
  */
@@ -118,6 +118,19 @@ class FateTable internal constructor(
      */
     fun logTyped(name: String, value: Any, type: KType) = guarded(name) { logValue(name, value, type) }
 
+    /**
+     * Logs [value] at [name] using [schema] instead of inferring one.
+     *
+     * Use this when inference can't produce the schema you want, such as a
+     * [gay.zharel.fateweaver.schemas.MapSchema] with a particular key type, an array with a specific
+     * element schema, or a custom struct schema. It is also how Java logs a `Map` or a `List`.
+     *
+     * The first log to a path fixes its schema. Later logs reuse it, so pass the same schema each
+     * time.
+     */
+    fun <T : Any> log(name: String, value: T, schema: FateSchema<T>) =
+        guarded(name) { logValue(name, value, null, schema) }
+
     private inline fun guarded(name: String, block: () -> Unit) {
         try {
             block()
@@ -126,11 +139,11 @@ class FateTable internal constructor(
         }
     }
 
-    private fun logValue(name: String, value: Any, type: KType?) {
+    private fun logValue(name: String, value: Any, type: KType?, schema: FateSchema<*>? = null) {
         val slash = name.lastIndexOf('/')
         if (slash >= 0) {
             // "a/b/c" is entry c of table a/b
-            table(name.substring(0, slash)).logValue(name.substring(slash + 1), value, type)
+            table(name.substring(0, slash)).logValue(name.substring(slash + 1), value, type, schema)
             return
         }
 
@@ -144,8 +157,12 @@ class FateTable internal constructor(
             return
         }
 
-        val key: Any = if (type != null && type.arguments.isNotEmpty()) type else value.javaClass
-        val slot = slotFor(name, key, value, type) ?: return
+        val key: Any = when {
+            schema != null -> schema
+            type != null && type.arguments.isNotEmpty() -> type
+            else -> value.javaClass
+        }
+        val slot = slotFor(name, key, value, type, schema) ?: return
 
         if (!compatible(slot.key, key, value)) {
             registry.warn(
@@ -163,7 +180,7 @@ class FateTable internal constructor(
      * Returns the slot for [name], building or rebuilding it as needed, or `null` if the path can't
      * be logged to.
      */
-    private fun slotFor(name: String, key: Any, value: Any, type: KType?): Slot? {
+    private fun slotFor(name: String, key: Any, value: Any, type: KType?, schema: FateSchema<*>?): Slot? {
         val generation = registry.generation
         val existing = slots[name]
         if (existing != null && existing.generation == generation) return existing
@@ -173,7 +190,7 @@ class FateTable internal constructor(
             // its entry against the new backends.
             rebuild(name, existing, generation)
         } else {
-            create(name, key, value, type, generation)
+            create(name, key, value, type, schema, generation)
         }
 
         // Two threads can race to set up one path. The first one in wins, and the loser's value is
@@ -184,9 +201,16 @@ class FateTable internal constructor(
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun create(name: String, key: Any, value: Any, type: KType?, generation: Long): Slot {
+    private fun create(
+        name: String,
+        key: Any,
+        value: Any,
+        type: KType?,
+        explicit: FateSchema<*>?,
+        generation: Long
+    ): Slot {
         val fullPath = join(path, name)
-        val schema = try {
+        val schema = explicit ?: try {
             if (key is KType) FateSchema.schemaOfType(type!!) else FateSchema.schemaOfClass(value.javaClass)
         } catch (e: Exception) {
             registry.warn("Could not log '$fullPath': no schema for ${describe(key)}. ${e.message}")
@@ -208,9 +232,12 @@ class FateTable internal constructor(
      * Two parameterized types must match exactly. A path set up from a runtime class accepts
      * instances of it. A path set up from a parameterized type accepts any unparameterized value,
      * because it has no type arguments to contradict, and a wrong one fails when it is encoded.
+     * An explicit schema is never compared. A path set up with one keeps it, and a value that
+     * doesn't fit fails when it is encoded.
      */
     private fun compatible(slotKey: Any, key: Any, value: Any): Boolean = when {
         slotKey == key -> true
+        slotKey is FateSchema<*> || key is FateSchema<*> -> true
         slotKey is KType && key is KType -> false
         slotKey is Class<*> -> slotKey.isInstance(value)
         else -> true

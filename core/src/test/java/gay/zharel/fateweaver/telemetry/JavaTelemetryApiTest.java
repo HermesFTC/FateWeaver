@@ -1,5 +1,8 @@
 package gay.zharel.fateweaver.telemetry;
 
+import gay.zharel.fateweaver.schemas.DoubleSchema;
+import gay.zharel.fateweaver.schemas.MapSchema;
+import gay.zharel.fateweaver.schemas.StringSchema;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
@@ -59,6 +62,20 @@ class JavaTelemetryApiTest {
         } finally {
             Fate.getRegistry().unregister(mock);
         }
+    }
+
+    @Test
+    void javaLogsAMapWithAnExplicitSchema() {
+        FateRegistry registry = new FateRegistry();
+        MockFateBackend mock = new MockFateBackend();
+        registry.register(mock);
+
+        registry.table("Motors").log(
+                "powers",
+                Collections.singletonMap("fl", 0.5),
+                new MapSchema<>(StringSchema.INSTANCE, DoubleSchema.INSTANCE));
+
+        assertEquals(Collections.singletonList(Collections.singletonMap("fl", 0.5)), mock.valuesAt("Motors/powers"));
     }
 
     @Test

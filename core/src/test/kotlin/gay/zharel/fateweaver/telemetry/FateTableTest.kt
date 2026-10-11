@@ -6,6 +6,7 @@ import gay.zharel.fateweaver.log.FateLogWriter
 import gay.zharel.fateweaver.schemas.DoubleSchema
 import gay.zharel.fateweaver.schemas.FateSchema
 import gay.zharel.fateweaver.schemas.MapSchema
+import gay.zharel.fateweaver.schemas.StringSchema
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.CountDownLatch
@@ -117,6 +118,35 @@ class FateTableTest {
 
         assertIs<MapSchema<*, *>>(env.mock.schemaAt("Motors/powers"))
         assertEquals(listOf<Any?>(mapOf("fl" to 0.5, "fr" to -0.5)), env.mock.valuesAt("Motors/powers"))
+    }
+
+    @Test
+    fun `an explicit schema is used instead of inference`() {
+        val env = Env()
+        val schema = MapSchema(StringSchema, DoubleSchema)
+        val table = env.registry.table("Motors")
+
+        table.log("powers", mapOf("fl" to 0.5), schema)
+        table.log("powers", mapOf("fl" to 0.25), schema)
+
+        assertTrue(env.mock.schemaAt("Motors/powers") === schema)
+        assertEquals(listOf<Any?>(mapOf("fl" to 0.5), mapOf("fl" to 0.25)), env.mock.valuesAt("Motors/powers"))
+        assertTrue(env.warnings.isEmpty(), env.warnings.toString())
+    }
+
+    @Test
+    fun `a path set up with an explicit schema keeps it`() {
+        val env = Env()
+        val schema = MapSchema(StringSchema, DoubleSchema)
+        val table = env.registry.table("Motors")
+
+        table.log("powers", mapOf("fl" to 0.5), schema)
+        // A second schema object, as Java code that builds one per call would pass
+        table.log("powers", mapOf("fl" to 0.25), MapSchema(StringSchema, DoubleSchema))
+
+        assertTrue(env.mock.schemaAt("Motors/powers") === schema)
+        assertEquals(2, env.mock.valuesAt("Motors/powers").size)
+        assertTrue(env.warnings.isEmpty(), env.warnings.toString())
     }
 
     @Test
