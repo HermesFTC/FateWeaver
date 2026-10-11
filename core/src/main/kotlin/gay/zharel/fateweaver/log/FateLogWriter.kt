@@ -52,45 +52,40 @@ interface LogChannel<T> {
 }
 
 /**
- * A writer for FateWeaver log files, holding any number of typed channels.
+ * Writes a FateWeaver log to a [FateSink]. A log holds any number of typed channels.
  *
- * Each channel is typed, so the compiler catches a value that doesn't match its schema. Schemas are
- * written into the log itself, which is what lets a reader decode the file with no access to the
- * classes that produced it. Most types need no schema of their own: hand [createChannel] a class
- * and it infers one.
+ * Each channel has a type, so the compiler rejects a value that doesn't match its schema. Schemas
+ * are written into the log, so a reader can decode the file without the classes that produced it.
+ * Most types need no hand-written schema, because [createChannel] infers one from a class.
  *
  * ## File format
  *
- * A 4-byte header of magic bytes and a version, then a run of entries. An entry is either a schema
- * entry (type 0) defining a channel, or a message entry (type 1) carrying one value for a channel
- * already defined. Since version 3 every message entry also carries the time it was logged, in
- * nanoseconds, so readers can line channels up without a hand-written timestamp channel.
+ * The file starts with a 4-byte header of magic bytes and a version. After that comes a run of
+ * entries. A schema entry (kind 0) defines a channel. A message entry (kind 1) carries one value
+ * for a channel that is already defined. Since version 3, every message entry also carries the time
+ * it was logged, in nanoseconds, so readers can line up channels without a timestamp channel.
  *
  * ## Threading
  *
- * A writer may be shared between threads. Entries reach the sink one at a time, in an order where
- * a channel's schema entry always precedes its first message.
+ * A writer can be shared between threads. The sink receives entries one at a time, and a channel's
+ * schema entry always comes before its first message.
  *
  * ## Example
  *
  * ```kotlin
- * // Create a log writer
  * FateLogWriter.create("mylog.fate").use { writer ->
- *     // Create typed channels
  *     val userChannel = writer.createChannel("users", User::class)
  *     val eventChannel = writer.createChannel("events", Event::class)
  *
- *     // Write data
  *     userChannel.put(User("alice", 25))
  *     eventChannel.put(Event("login", System.currentTimeMillis()))
  * }
  * ```
  *
- * @param sink The destination for the log data
- * @constructor Creates a new FateLogWriter that writes to the specified sink
+ * @param sink Where the log bytes go
  */
 class FateLogWriter(val sink: FateSink) : AutoCloseable {
-    /** Creates a writer that records to [stream], the usual case for file logging. */
+    /** Creates a writer that writes to [stream], as in file logging. */
     constructor(stream: OutputStream) : this(StreamSink(stream))
 
     init {
@@ -100,42 +95,39 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
         sink.header(headerBuffer.array())
     }
 
-    /** Orders every call into [sink], and guards channel registration. */
+    /** Serializes every call into [sink] and every channel registration. */
     private val lock = Any()
 
     /**
-     * Appended to only under [lock]. Copy-on-write so the write path can look channels up without
-     * taking it; channels are added rarely and written constantly.
+     * Appended to only under [lock]. It is copy-on-write so the write path can read it without the
+     * lock. Channels are added rarely and written to constantly.
      */
     private val channels = CopyOnWriteArrayList<WriterChannel<*>>()
 
     /**
-     * Adds a channel to the log and immediately writes its schema definition.
+     * Registers [channel] and writes its schema entry to the sink right away.
      *
-     * This method registers the channel with the log writer and writes a schema entry
-     * to the log file. The schema entry contains the channel name and the complete
-     * schema definition for the channel's data type.
+     * The entry holds the channel name and the full schema for its type.
      *
-     * @param T The type of objects that will be written to this channel
-     * @param channel The channel to add to this log writer
-     * @return The same channel that was passed in, for method chaining
+     * @param T The type of objects written to this channel
+     * @param channel The channel to add
+     * @return [channel]
      * @throws IllegalArgumentException if a channel with the same name already exists
      * @throws IllegalArgumentException if the channel belongs to a different log writer
      */
     fun <T> addChannel(channel: WriterChannel<T>): WriterChannel<T> = synchronized(lock) {
-        // Check for duplicate names
         require(channels.none { it.name == channel.name }) {
             "Channel with name '${channel.name}' already exists"
         }
 
-        // this uses referential equality (as equals isn't overridden) because we want to make sure
-        //that we are only adding channels that belong to this log writer
+        // WriterChannel doesn't override equals, so == is identity. This rejects channels that
+        // belong to another writer.
         require(channel.writer == this) {
             "Channel belongs to a different log writer"
         }
 
-        // Encode before registering, so a schema that fails to encode leaves no half-added channel
-        // behind to shift every later index.
+        // Encode before registering. If the schema fails to encode, no half-added channel is left
+        // behind to shift the index of every later channel.
         val chBytes = channel.name.toByteArray(Charsets.UTF_8)
         val buffer = ByteBuffer.allocate(8 + chBytes.size + channel.schema.schemaSize)
         buffer.putInt(0) // schema entry
@@ -148,30 +140,29 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
 
         channel.index = channels.size
         channels.add(channel)
-        // Write schema entry immediately
         sink.schemaEntry(buffer.array())
 
         channel
     }
 
     /**
-     * Adds a channel to the log, creating a [WriterChannel] from the given [LogChannel] if necessary.
+     * Returns this writer's channel with the same name as [channel].
      *
-     * If the provided channel is already a [WriterChannel] belonging to this writer, it is added directly.
-     * Otherwise, a new [WriterChannel] is created with the same name and schema.
+     * If there is none, this registers a new [WriterChannel] with [channel]'s name and schema and
+     * writes its schema entry.
      *
-     * @param T The type of objects that will be written to this channel
-     * @param channel The channel to add
+     * @param T The type of objects written to this channel
+     * @param channel The channel to look up or add
      * @return A [WriterChannel] bound to this writer
      */
     fun <T> addChannel(channel: LogChannel<T>) = boundChannel(channel)
 
     /**
-     * Creates a new log channel with the specified name and schema, and adds it to the log.
+     * Creates a channel with the given name and schema, and adds it to the log.
      *
-     * @param T The type of objects that will be written to this channel
+     * @param T The type of objects written to this channel
      * @param name The unique name for the channel
-     * @param schema The schema defining how objects of type [T] will be serialized
+     * @param schema The schema that encodes objects of type [T]
      * @return A new [WriterChannel] bound to this writer
      * @throws IllegalArgumentException if a channel with the same name already exists
      */
@@ -179,14 +170,11 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
         addChannel(WriterChannel(name, schema))
 
     /**
-     * Creates a new log channel with the specified name and automatically inferred schema.
+     * Creates a channel with the given name and a schema inferred from [cls] by reflection.
      *
-     * The schema is automatically derived from the provided Java class using reflection.
-     * This is convenient for simple data classes but may not work for complex types.
-     *
-     * @param T The type of objects that will be written to this channel
+     * @param T The type of objects written to this channel
      * @param name The unique name for the channel
-     * @param cls The Java class to derive the schema from
+     * @param cls The class to infer the schema from
      * @return A new [WriterChannel] bound to this writer
      * @throws IllegalArgumentException if a channel with the same name already exists
      */
@@ -194,14 +182,13 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
         createChannel(name, FateSchema.schemaOfClass(cls))
 
     /**
-     * Creates a new log channel with the specified name and automatically inferred schema.
+     * Creates a channel with the given name and a schema inferred from [cls] by reflection.
      *
-     * The schema is automatically derived from the provided Kotlin class using reflection.
-     * This is convenient for simple data classes but may not work for complex types.
+     * Type arguments are lost here. Use the reified overload for a type like `Map<String, Double>`.
      *
-     * @param T The type of objects that will be written to this channel
+     * @param T The type of objects written to this channel
      * @param name The unique name for the channel
-     * @param cls The Kotlin class to derive the schema from
+     * @param cls The class to infer the schema from
      * @return A new [WriterChannel] bound to this writer
      * @throws IllegalArgumentException if a channel with the same name already exists
      */
@@ -209,18 +196,15 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
         createChannel(name, FateSchema.schemaOfClass(cls.java))
 
     /**
-     * Creates a new log channel whose schema is inferred from the reified type [T], including
-     * type arguments.
-     *
-     * This overload should be preferred over the [createChannel] overload that takes a [KClass]
-     * because type arguments are preserved:
+     * Creates a channel whose schema is inferred from the reified type [T], type arguments
+     * included. Prefer this to the [KClass] overload, which loses them.
      *
      * ```kotlin
      * val powers = writer.createChannel<Map<String, Double>>("Motors/Powers")
      * powers.put(mapOf("fl" to 0.5))
      * ```
      *
-     * @param T The type of objects that will be written to this channel
+     * @param T The type of objects written to this channel
      * @param name The unique name for the channel
      * @return A new [WriterChannel] bound to this writer
      * @throws IllegalArgumentException if a channel with the same name already exists, or if [T]
@@ -234,9 +218,7 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
     /**
      * Writes an object to the specified channel, stamped with the current [System.nanoTime].
      *
-     * If the channel is not yet registered with this writer, it will be automatically
-     * added before writing the object. The object is serialized using the channel's
-     * schema and written as a message entry to the log file.
+     * If this writer has no channel with that name yet, it adds one first.
      *
      * @param T The type of the object being written
      * @param channel The channel to write to
@@ -247,9 +229,9 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
     /**
      * Writes an object to the specified channel, stamped with [timestamp].
      *
-     * Use this when the time the value was produced differs from the time it is written, or when
-     * several writers must agree on one timestamp. [timestamp] is in nanoseconds and should come
-     * from the same clock for every write to a log, since readers compare them.
+     * Use this when the value was produced earlier than it is written, or when several writers must
+     * share one timestamp. Take [timestamp] from the same clock for every write to a log, because
+     * readers compare them.
      *
      * @param T The type of the object being written
      * @param channel The channel to write to
@@ -259,8 +241,8 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
     fun <T> write(channel: LogChannel<T>, obj: T, timestamp: Long) {
         val index = boundChannel(channel).index
 
-        // Encoding happens outside the lock: it is the expensive part, and nothing in it touches
-        // shared state. Only the hand-off to the sink has to be ordered.
+        // Encode outside the lock. It is the expensive part and touches no shared state. Only the
+        // hand-off to the sink needs ordering.
         val objSize = channel.schema.objSize(obj)
         val buffer = ByteBuffer.allocate(MESSAGE_PREFIX_SIZE + objSize)
         buffer.putInt(1) // message entry
@@ -274,13 +256,12 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
     }
 
     /**
-     * The static type each name-addressed channel was created from, for channels that [write]
-     * built from a parameterized type.
+     * The parameterized type each by-name channel was created from.
      *
-     * A channel's schema is fixed at creation, so writing a differently parameterized value later
-     * would encode against the wrong schema without saying so. Keeping the type around turns that
-     * into an error naming both types. Only parameterized types go in here. Everything else takes
-     * its schema from the runtime class, which cannot disagree with itself.
+     * A channel's schema is fixed at creation. Without this, writing a differently parameterized
+     * value later would encode against the wrong schema silently. Only parameterized types are
+     * recorded. Other channels take their schema from the runtime class, which can't disagree
+     * with itself.
      */
     private val declaredTypes = ConcurrentHashMap<String, KType>()
 
@@ -288,17 +269,17 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
      * Writes an object to a channel identified by name, inferring the schema from the object's
      * runtime class.
      *
-     * Use this when the channel type isn't known at compile time. Writes to the named channel if it
-     * exists, otherwise creates one from the object's class first.
+     * Use this when the channel type isn't known at compile time. If the channel doesn't exist, this
+     * creates it from the object's class first.
      *
-     * Java sees this as `write`. Kotlin callers should reach for the reified `write` extension
-     * instead, which also recovers type arguments. A runtime class has no type arguments, so a [Map]
-     * or [Collection] passed here is rejected. Create the channel with an explicit schema instead:
+     * Java sees this as `write`. It is named `writeErased` in Kotlin so it doesn't clash with the
+     * reified `write` extension, which Kotlin callers should use because it also recovers type
+     * arguments. A runtime class has no type arguments, so this rejects a [Map] or [Collection].
+     * Create the channel with an explicit schema instead, for example
      * `createChannel("k", new MapSchema<>(StringSchema.INSTANCE, DoubleSchema.INSTANCE))`.
      *
-     * The cast to the existing channel's type is unchecked, so writing the wrong type to an
-     * established channel fails at encode time rather than compile time. Prefer the typed [write]
-     * where you can.
+     * The cast to the existing channel's type is unchecked. Writing the wrong type to an existing
+     * channel fails at encode time, not compile time. Prefer the typed [write] where you can.
      *
      * @param channelName The name of the channel to write to
      * @param obj The object to write
@@ -307,16 +288,15 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
     fun writeErased(channelName: String, obj: Any) = writeResolved(channelName, obj, null)
 
     /**
-     * Writes an object to a channel identified by name, inferring the schema from the fully
-     * resolved type [type] rather than from [obj]'s erased runtime class.
+     * Writes an object to a channel identified by name, inferring the schema from [type] instead of
+     * from [obj]'s erased runtime class.
      *
-     * This is what the reified `write` extension calls. Call it directly if you got a [KType] some
-     * other way.
+     * The reified `write` extension calls this. Call it directly if you already have a [KType].
      *
-     * [type] only matters when it has type arguments, since that is the only thing the runtime
-     * class can't supply. Without them this falls through to [FateSchema.schemaOfClass] on
-     * `obj.javaClass`, so a value whose static type is a supertype (`Any`, `Number`, an interface)
-     * keeps getting the concrete schema it always did.
+     * [type] only matters when it has type arguments, which the runtime class can't supply.
+     * Otherwise this uses [FateSchema.schemaOfClass] on `obj.javaClass`. A value whose static type
+     * is a supertype such as `Any`, `Number` or an interface therefore still gets its concrete
+     * schema.
      *
      * @param channelName The name of the channel to write to
      * @param obj The object to write
@@ -328,12 +308,11 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
         writeResolved(channelName, obj, type.takeIf { it.arguments.isNotEmpty() })
 
     /**
-     * Shared body of [writeErased] and [write]. By this point [parameterized] is either a type with
-     * type arguments or `null`, meaning the runtime class is the better source.
+     * Shared body of [writeErased] and [write]. [parameterized] is a type with type arguments, or
+     * `null` to infer from the runtime class.
      */
     private fun writeResolved(channelName: String, obj: Any, parameterized: KType?) {
-        // Look up and create under one lock, so two threads writing a new name at once cannot
-        // both decide to create it.
+        // Look up and create under one lock, so two threads writing a new name can't both create it.
         val channel = synchronized(lock) {
             val existingChannel = channels.find { it.name == channelName }
 
@@ -343,7 +322,6 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
                 @Suppress("UNCHECKED_CAST")
                 existingChannel as WriterChannel<Any>
             } else {
-                // Create new channel on-demand
                 @Suppress("UNCHECKED_CAST")
                 val schema = if (parameterized != null) {
                     FateSchema.schemaOfType(parameterized)
@@ -361,11 +339,11 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
     }
 
     /**
-     * Fails if [channelName] was created from a parameterized type that [type] disagrees with.
+     * Throws if [channelName] was created from a parameterized type that differs from [type].
      *
-     * When either side is unparameterized this does nothing. A channel built from a runtime class
-     * has no recorded type to contradict, and an unparameterized write to a parameterized channel
-     * is either a subtype that encodes fine or a mismatch the element schemas will throw on anyway.
+     * It does nothing when either side is unparameterized. A channel built from a runtime class has
+     * no recorded type to contradict. An unparameterized write to a parameterized channel is either
+     * a subtype that encodes fine or a mismatch the element schemas throw on anyway.
      */
     private fun checkDeclaredType(channelName: String, type: KType?) {
         val declared = declaredTypes[channelName] ?: return
@@ -380,10 +358,7 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
     }
 
     /**
-     * Closes the log writer and flushes any remaining data to the underlying sink.
-     *
-     * After calling this method, no further write operations should be performed.
-     * The underlying sink is also closed.
+     * Flushes and closes the sink. Don't write after this.
      */
     override fun close() {
         sink.flush()
@@ -391,43 +366,35 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
     }
 
     /**
-     * A log channel implementation that is bound to a specific [FateLogWriter].
+     * A [LogChannel] bound to one [FateLogWriter]. Writes to it go to that writer.
      *
-     * WriterChannels are created by [FateLogWriter] and provide a convenient way to write
-     * typed objects to the log. Each channel maintains a reference to its parent writer
-     * and delegates write operations to it.
-     *
-     * @param T The type of objects that can be written to this channel
+     * @param T The type of objects written to this channel
      * @param name The unique name of this channel
-     * @param schema The schema used to serialize objects for this channel
+     * @param schema The schema that encodes objects for this channel
      */
     inner class WriterChannel<T> internal constructor(
         override val name: String,
         override val schema: FateSchema<T>
     ) : LogChannel<T> {
-        /** Reference to the [FateLogWriter] that owns this channel. */
+        /** The [FateLogWriter] that owns this channel. */
         val writer: FateLogWriter get() = this@FateLogWriter
 
         /**
          * Position in the writer's channel list, which is the index messages carry on the wire.
-         * `-1` until the channel is added. Set once, under the writer's lock, before the channel
-         * becomes visible to any other thread.
+         * It is `-1` until the channel is added. The writer sets it once, under its lock, before any
+         * other thread can see the channel.
          */
         internal var index: Int = -1
 
         /**
-         * Writes an object to this channel.
-         *
-         * This is equivalent to calling [FateLogWriter.write] with this channel.
+         * Writes an object to this channel, the same as [FateLogWriter.write] with this channel.
          *
          * @param obj The object to write to the channel
          */
         override fun put(obj: T) = write(this, obj)
 
         /**
-         * Writes an object to this channel.
-         *
-         * This is an alias for [put] that may be more intuitive in some contexts.
+         * Alias for [put].
          *
          * @param obj The object to write to the channel
          */
@@ -437,19 +404,15 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
     }
 
     /**
-     * Returns the [WriterChannel] associated with [channel] or creates a new one if it doesn't exist.
-     *
-     * This method ensures that external [LogChannel] instances are properly bound to this writer.
-     * If a channel with the same name already exists, it is returned. Otherwise, a new
-     * [WriterChannel] is created and added to this writer.
+     * Returns this writer's [WriterChannel] with the same name as [channel], adding one with
+     * [channel]'s schema if none exists.
      *
      * @param T The type of the channel
      * @param channel The channel to bind
      * @return A [WriterChannel] bound to this writer
      */
     private fun <T> boundChannel(channel: LogChannel<T>): WriterChannel<T> {
-        // Fast path for the common case, a channel this writer made and already registered: no
-        // name scan, no lock.
+        // Fast path for a channel this writer made and already registered. No name scan, no lock.
         if (channel is WriterChannel<*> && channel.writer === this && channel.index >= 0) {
             @Suppress("UNCHECKED_CAST")
             return channel as WriterChannel<T>
@@ -470,20 +433,14 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
     override fun toString() = "LogWriter($sink)"
 
     /**
-     * Checks if a channel with the same name as the provided channel exists in this writer.
-     *
-     * @param channel The channel to check for
-     * @return `true` if a channel with the same name exists, `false` otherwise
+     * Returns whether this writer has a channel with the same name as [channel].
      */
     operator fun contains(channel: LogChannel<*>) = channels.any { it.name == channel.name }
 
     companion object Companion {
         /**
-         * Creates a FateLogWriter for the given file.
-         *
-         * This is a convenience factory method that creates a [FileOutputStream] for the
-         * specified file and wraps it in a [FateLogWriter]. The file will be created if
-         * it doesn't exist, or overwritten if it does.
+         * Creates a writer that logs to [file]. The file is created if it doesn't exist and
+         * overwritten if it does.
          *
          * @param file The file to write the log to
          * @return A new [FateLogWriter] instance
@@ -494,10 +451,7 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
         }
 
         /**
-         * Creates a FateLogWriter for the given file path.
-         *
-         * This is a convenience factory method that creates a [File] from the path string
-         * and then calls [create(File)].
+         * Creates a writer that logs to the file at [filePath], as [create] does for a [File].
          *
          * @param filePath The path to the file to write the log to
          * @return A new [FateLogWriter] instance
@@ -510,8 +464,8 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
 }
 
 /**
- * Writes an object to a channel identified by name, inferring the schema from [T]'s static type,
- * type arguments included.
+ * Writes an object to a channel identified by name, inferring the schema from [T], type arguments
+ * included.
  *
  * This is the Kotlin form of [FateLogWriter.writeErased], and the only way to write a parameterized
  * value by channel name:
@@ -521,10 +475,9 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
  * writer.write("Path/Points", listOf(a, b, c))        // List<Pose>
  * ```
  *
- * The JVM leaves no choice about it being an extension. As a member it would erase to
- * `write(String, Object)` and clash with [FateLogWriter.writeErased]. Give that member the name
- * `write` instead and it wins overload resolution at every call site, so this reified version never
- * runs.
+ * This is an extension because a member would erase to `write(String, Object)`, the same JVM
+ * signature `writeErased` is exported under. Giving `writeErased` the Kotlin name `write` would
+ * fix the clash, but then it would win overload resolution and this version would never run.
  *
  * @see FateLogWriter.write
  */

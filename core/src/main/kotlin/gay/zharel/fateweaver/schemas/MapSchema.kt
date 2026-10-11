@@ -5,8 +5,7 @@ import java.nio.ByteBuffer
 /**
  * A schema for maps with independently typed keys and values.
  *
- * Keys are not restricted to strings: any schema-able type works, so `Map<Int, Pose>` and
- * `Map<MyEnum, Double>` are both encodable.
+ * Keys can be any type that has a schema, so `Map<Int, Pose>` and `Map<MyEnum, Double>` both work.
  *
  * ## Binary format
  *
@@ -20,28 +19,27 @@ import java.nio.ByteBuffer
  * [4 bytes: entry count N] [key1][value1] [key2][value2] ... [keyN][valueN]
  * ```
  *
- * Entries go out in the map's own iteration order, which is *not* part of the format contract.
- * Every key is written explicitly, so a [HashMap] and a [LinkedHashMap] holding the same entries
- * both encode validly, just to different bytes.
+ * Entries are written in the map's own iteration order, and the format does not depend on it. Every
+ * key is written, so a [HashMap] and a [LinkedHashMap] with the same entries both decode correctly,
+ * but their bytes differ.
  *
  * ## Mutation
  *
  * [gay.zharel.fateweaver.log.FateLogWriter.write] calls [objSize] and [encodeObject] separately, so
- * don't mutate the map in between. If you do, you get either a [java.nio.BufferOverflowException] or
- * the writer's "encoded object does not match reported size" check, not corrupt bytes. Pass a copy
- * if another thread might touch the map.
+ * don't mutate the map in between. If you do, the write fails with a
+ * [java.nio.BufferOverflowException] or the writer's "encoded object does not match reported size"
+ * check. It does not write corrupt bytes. Pass a copy if another thread might touch the map.
  *
  * ## Nulls
  *
- * A null key or value needs an [OptionalSchema] around the relevant side. `Map<String, Double?>`
- * infers as `MapSchema(StringSchema, OptionalSchema(DoubleSchema))`, and each absent value costs
- * one byte. Passing a null to a schema that isn't optional throws rather than writing bad bytes.
+ * A null key or value needs an [OptionalSchema] on that side. `Map<String, Double?>` infers as
+ * `MapSchema(StringSchema, OptionalSchema(DoubleSchema))`, and each absent value costs one byte.
+ * A null passed to a schema that is not optional throws.
  *
  * ## Size limits
  *
- * [objSize] returns an [Int], so a map that would encode to more than 2 GiB overflows it and the
- * writer's buffer allocation throws. You'll notice, but the error won't tell you why. Keep logged
- * maps to a sane size.
+ * [objSize] returns an [Int]. A map that encodes to more than 2 GiB overflows it, and the writer's
+ * buffer allocation then throws without saying why.
  *
  * ## Example
  *
@@ -80,7 +78,7 @@ class MapSchema<K, V>(
     }
 
     override fun encodeObject(buffer: ByteBuffer, obj: Map<K, V>) {
-        // Snapshot the entries so the count prefix can never disagree with the body that follows.
+        // Copy the entries so the count prefix always matches the entries written after it.
         val entries = obj.entries.toList()
         buffer.putInt(entries.size)
         for (entry in entries) {

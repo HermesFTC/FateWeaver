@@ -15,25 +15,24 @@ fun interface FateWarningHandler {
 /**
  * The set of [FateBackend]s that logged values are routed to, plus the time source that stamps them.
  *
- * Most code never touches this directly: [Fate] wraps a single shared registry. It is a class, not
- * a singleton, so a test can build its own with a [kotlin.time.TestTimeSource] and a
- * [MockFateBackend] and not disturb anything else.
+ * Most code uses [Fate], which wraps one shared registry. This is a class so a test can build its
+ * own with a [kotlin.time.TestTimeSource] and a [MockFateBackend] without affecting anything else.
  *
  * ## Timestamps
  *
- * Every value is stamped with the time elapsed on [timeSource] since the registry was created, in
- * nanoseconds. Only differences between stamps mean anything, which is all a log reader needs.
+ * Every value is stamped in nanoseconds with the time elapsed on [timeSource] since the registry
+ * was created or last restarted. Only differences between stamps mean anything.
  *
- * Every registered backend receives every value. The registry is safe to use while other threads
- * are logging. A table notices a change in the backends on its next log and rebuilds its entries
- * against the new set.
+ * ## Backends
+ *
+ * Every registered backend receives every value. Backends can change while other threads are
+ * logging. A table notices the change on its next log and rebuilds its entries against the new set.
  *
  * ## Warnings
  *
- * Telemetry reports problems (a value of the wrong type, a schema that can't be inferred, a backend
- * that threw) through [warningHandler] and carries on, because a logging mistake should not end a
- * match. Each distinct message is reported once, so a bad value logged every loop does not flood the
- * output.
+ * Telemetry reports a wrong type, a schema it can't infer, or a backend that threw through
+ * [warningHandler], then carries on. A logging mistake should not end a match. Each distinct message
+ * is reported once, so a bad value logged every loop does not flood the output.
  */
 class FateRegistry @JvmOverloads constructor(
     /** Stamps every logged value. Defaults to [TimeSource.Monotonic]. */
@@ -48,9 +47,9 @@ class FateRegistry @JvmOverloads constructor(
     /**
      * Makes the next timestamp count from zero again.
      *
-     * Call this when a new log begins, so its first message is stamped near zero rather than with
-     * however long the program has been running. Values logged before and after a restart share no
-     * common origin, so don't restart while one log is still open.
+     * Call this when a new log begins, so its first message is stamped near zero instead of with
+     * the time the program has been running. Stamps from before and after a restart have no common
+     * origin, so don't restart while a log is still open.
      */
     fun restartClock() {
         origin = timeSource.markNow()
@@ -81,8 +80,8 @@ class FateRegistry @JvmOverloads constructor(
     val backendCount: Int get() = backends.size
 
     /**
-     * Adds [backend], so it receives every value logged from now on, plus the next value logged
-     * to each path that has been logged before.
+     * Adds [backend]. It receives every value logged after this call, including on paths that were
+     * already being logged.
      */
     fun register(backend: FateBackend) {
         backends.add(backend)
@@ -121,10 +120,13 @@ class FateRegistry @JvmOverloads constructor(
         }
     }
 
-    /** Reports [message] to [warningHandler], unless this exact message has been reported before. */
+    /**
+     * Reports [message] to [warningHandler], unless this exact message has been reported before.
+     * After 1000 distinct messages, new ones are dropped.
+     */
     fun warn(message: String) {
-        // Past the cap, stop remembering rather than grow without bound; a robot that has produced
-        // this many distinct warnings has bigger problems than a repeated line.
+        // Past the cap, drop new messages instead of remembering them, so the set can't grow without
+        // bound. A robot with this many distinct warnings has bigger problems than a repeated line.
         if (warned.size >= MAX_REMEMBERED_WARNINGS || !warned.add(message)) return
 
         try {
@@ -135,7 +137,8 @@ class FateRegistry @JvmOverloads constructor(
     }
 
     /**
-     * Builds the entry a table uses for [path]: one entry per backend, behind a single call.
+     * Builds the entry a table uses for [path]. It wraps one entry per backend, so a table makes a
+     * single call.
      *
      * A backend that can't make its entry is skipped with a warning, and the rest still receive
      * values.
@@ -162,7 +165,7 @@ class FateRegistry @JvmOverloads constructor(
     }
 }
 
-/** What a path logs to when no backend is registered: nowhere. */
+/** Used when no backend is registered. Drops every value. */
 private class DiscardEntry<T> : FateEntry<T> {
     override fun log(value: T, timestamp: Long) {}
 }

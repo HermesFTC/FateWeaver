@@ -43,12 +43,12 @@ enum class LogMode {
 }
 
 /**
- * Gives every OpMode a log: a [FateLogBackend] registered on [Fate.registry] when the OpMode is
- * initialized, and closed when it stops.
+ * Gives every OpMode a log. It registers a [FateLogBackend] on [Fate.registry] when the OpMode is
+ * initialized and closes it when the OpMode stops.
  *
  * Nothing needs setting up. The Robot Controller calls [registerOpModeListener] at startup, and from
  * then on whatever robot code logs through [Fate] lands in the running OpMode's log. Values logged
- * while no OpMode is running, such as the idle state between OpModes, go nowhere.
+ * while no OpMode is running, such as between OpModes, are not written to a log.
  *
  * Only the backend this class registers is ever removed, so a backend you register yourself on
  * [Fate.registry] keeps working across OpModes.
@@ -57,10 +57,9 @@ object FateLogManager : OpModeManagerNotifier.Notifications {
     /**
      * Whether OpMode logs go to a `.fate` file, to connected AdvantageScope clients, or both.
      *
-     * Setting this to [LogMode.FILE] is the compile-time way to guarantee nothing ever streams.
-     * The dashboard toggle backed by [LiveSettings] is the runtime way, and it persists across
-     * robot restarts. Either one alone is enough to keep [FlightProjector] from binding its port,
-     * which is what the FTC 2026-2027 competition manual requires during competition.
+     * Setting this to [LogMode.FILE] in code keeps OpMode logs from streaming and stops this class
+     * from starting [FlightProjector]. The dashboard toggle backed by [LiveSettings] closes the
+     * server itself and persists across robot restarts.
      */
     @JvmStatic
     var mode: LogMode = LogMode.BOTH
@@ -77,8 +76,8 @@ object FateLogManager : OpModeManagerNotifier.Notifications {
         opModeManager = eventLoop.opModeManager
         opModeManager.registerListener(this)
 
-        // start() is itself a no-op when live streaming has been switched off, so the persisted
-        // setting holds even when mode was left at BOTH.
+        // start() does nothing when live streaming has been switched off, so the saved setting
+        // holds even when mode is BOTH.
         if (mode != LogMode.FILE) FlightProjector.start()
     }
 
@@ -118,11 +117,12 @@ object FateLogManager : OpModeManagerNotifier.Notifications {
     }
 
     /**
-     * Opens a log file named [fileName] and returns a backend that writes to it, plus the live
-     * stream when [mode] allows it and [FlightProjector] is running.
+     * Returns a backend that writes to a log file named [fileName] and to the live stream, when
+     * [mode] allows it and [FlightProjector] is running. In [LogMode.LIVE] the file is skipped
+     * while the stream is running.
      *
-     * The backend is not registered. The OpMode hooks above do that, so call this directly only to
-     * log outside an OpMode, and register the result on [Fate.registry] yourself.
+     * The backend is not registered. The OpMode hooks above do that. Call this directly only to log
+     * outside an OpMode, and register the result on [Fate.registry] yourself.
      */
     @JvmStatic
     @JvmOverloads
@@ -141,8 +141,8 @@ object FateLogManager : OpModeManagerNotifier.Notifications {
 
         val live = mode != LogMode.FILE && FlightProjector.isRunning
         val sinks = buildList {
-            // The file is kept even in LIVE mode when the projector turns out not to be running,
-            // so a disabled projector can never cost a team their log.
+            // In LIVE mode the file is still written when the projector is not running, so a
+            // disabled projector never costs a team their log.
             if (mode != LogMode.LIVE || !live) add(StreamSink(FileOutputStream(currentFile)))
             if (live) add(FlightProjector)
         }

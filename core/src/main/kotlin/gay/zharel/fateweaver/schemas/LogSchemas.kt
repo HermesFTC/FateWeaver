@@ -11,10 +11,10 @@ import kotlin.reflect.full.withNullability
 /**
  * Describes how one type becomes bytes.
  *
- * A schema is parameterized by the type it encodes, so the compiler catches a value that doesn't
- * belong on a channel. Every schema can also write a description of itself, and that description
- * goes into the log ahead of the data, which is what lets a reader decode a file without the
- * classes that wrote it.
+ * A schema is generic over the type it encodes, so the compiler rejects a value that doesn't belong
+ * on a channel. Every schema can also write a description of itself. The writer puts that
+ * description in the log ahead of the data, so a reader can decode a file without the classes that
+ * wrote it.
  *
  * ## The schemas
  *
@@ -82,34 +82,30 @@ import kotlin.reflect.full.withNullability
 sealed interface FateSchema<T> {
 
     /**
-     * Unique identifier for this schema type within the FateWeaver format.
+     * The integer that identifies this schema's type in the log.
      *
-     * Each schema implementation has a distinct tag value that identifies its type
-     * in the binary format. Tags are defined in the [TypeRegistry] enum and must be
-     * consistent across all versions of the format.
+     * Values come from [TypeRegistry] and never change between format versions. Schemas that write
+     * the same bytes can share a tag, such as [OptionalSchema] and [JavaOptionalSchema].
      *
      * @see TypeRegistry
      */
     val tag: Int
 
     /**
-     * Number of bytes required to encode this schema's metadata.
+     * Number of bytes in this schema's definition.
      *
-     * This is the size of the schema definition, not of the objects it describes. A primitive is
-     * just its 4-byte tag; a class or array adds field definitions and nested element schemas.
+     * This is the size of the schema, not of the objects it describes. A primitive schema is only
+     * its 4-byte tag. A class or array adds field definitions and nested element schemas.
      *
-     * It must stay the same for a given schema, since the writer allocates against it.
+     * It must not change for a given schema, because the writer allocates against it.
      */
     val schemaSize: Int
 
     /**
-     * The complete schema definition as a byte array.
+     * The schema definition as bytes, which the writer puts in the log.
      *
-     * This is what gets written into the log file. It always starts with the [tag], followed by
-     * whatever metadata the schema needs.
-     *
-     * The default just encodes the tag. Anything with structure overrides it to add field
-     * definitions, element types and so on.
+     * It starts with the [tag], followed by any metadata the schema needs. The default is the tag
+     * alone. A schema with structure overrides it to add field definitions, element types and so on.
      *
      * Format:
      * ```
@@ -124,12 +120,9 @@ sealed interface FateSchema<T> {
         }
 
     /**
-     * Encodes this schema's metadata into the provided buffer.
+     * Writes the whole schema definition, starting with the [tag], into the buffer.
      *
-     * Writes the whole schema definition, starting with the [tag]. The number of bytes written
-     * must match [schemaSize] exactly.
-     *
-     * The default writes the [schema] property straight to the buffer.
+     * The number of bytes written must equal [schemaSize]. The default writes [schema].
      *
      * @param buffer The buffer to write schema data to. Must have at least [schemaSize] bytes remaining.
      * @throws java.nio.BufferOverflowException if the buffer doesn't have enough space
@@ -139,12 +132,12 @@ sealed interface FateSchema<T> {
     }
 
     /**
-     * Calculates the number of bytes required to encode the given object.
+     * Returns the number of bytes [encodeObject] writes for the given object.
      *
-     * Must be exact, deterministic, and consistent with what [encodeObject] actually writes.
+     * The result must be exact and must match what [encodeObject] writes.
      *
-     * For variable-length data (strings, arrays, nested objects) this walks the whole structure,
-     * and the writer calls it once per logged value on top of [encodeObject].
+     * For variable-length data such as strings, arrays and nested objects, this walks the whole
+     * structure. The writer calls it once per logged value, in addition to [encodeObject].
      *
      * @param obj The object to calculate the encoded size for
      * @return The number of bytes required to encode this object
@@ -152,10 +145,10 @@ sealed interface FateSchema<T> {
     fun objSize(obj: T): Int
 
     /**
-     * Encodes the given object into the provided buffer.
+     * Writes the given object into the buffer.
      *
-     * Writes exactly as many bytes as [objSize] reported for the same object, and advances the
-     * buffer's position by that much. The buffer needs at least that much room remaining.
+     * Writes exactly the number of bytes [objSize] reports for the same object and advances the
+     * buffer's position by that much. The buffer needs that much room remaining.
      *
      * The layout depends on the schema:
      * - Primitives: Direct binary representation (int, long, double, etc.)
@@ -171,12 +164,9 @@ sealed interface FateSchema<T> {
     fun encodeObject(buffer: ByteBuffer, obj: T)
 
     /**
-     * Registry of all supported schema types with their unique tag values.
+     * The schema types FateWeaver knows, each with the integer tag it writes into the log.
      *
-     * Every schema type FateWeaver knows, each with the integer tag it writes into the log.
-     *
-     * These values are part of the file format and
-     * must remain stable across versions to ensure backward compatibility.
+     * These values are part of the file format, so they never change.
      *
      * @param value The unique integer tag for this schema type
      */
@@ -217,15 +207,15 @@ sealed interface FateSchema<T> {
         private val resolving = mutableSetOf<KClass<*>>()
 
         /**
-         * Cache for schemas of *parameterized* types.
+         * Cache for schemas of parameterized types.
          *
-         * Keyed by [KType] rather than [KClass] because a generic schema depends on its type
-         * arguments: `Map<String, Int>` and `Map<String, Double>` are distinct schemas that share
-         * the classifier `Map::class`, so they cannot live in [registry]. [KType] has structural
-         * equality, which makes it a sound key.
+         * The key is a [KType], not a [KClass], because a generic schema depends on its type
+         * arguments. `Map<String, Int>` and `Map<String, Double>` need different schemas but share
+         * `Map::class`, so they cannot live in [registry]. [KType] has structural equality, so it
+         * works as a key.
          *
-         * Only fully resolved types reach this map, and entries are written only after a schema is
-         * completely built, so a failed resolution leaves nothing cached.
+         * An entry is added only after its schema is fully built, so a failed resolution caches
+         * nothing.
          */
         private val parameterizedRegistry = mutableMapOf<KType, FateSchema<*>>()
 
@@ -238,9 +228,7 @@ sealed interface FateSchema<T> {
             get() = registry.toMap()
 
         /**
-         * Automatically creates an appropriate schema for the given class type.
-         *
-         * Inspects the class and picks the schema that fits it.
+         * Creates the schema that fits the given class.
          *
          * ## Supported types
          *
@@ -257,23 +245,20 @@ sealed interface FateSchema<T> {
          *
          * ### Generics
          *
-         * A [Class] carries no type arguments, so `Map` and `Collection` are rejected here. Use
-         * [schemaOfType] when you have a [kotlin.reflect.KType] (which is what reflected class
-         * *fields* go through), or build the schema yourself, e.g.
-         * `MapSchema(StringSchema, DoubleSchema)`.
+         * A [Class] has no type arguments, so `Map` and `Collection` are rejected here. Use
+         * [schemaOfType] if you have a [kotlin.reflect.KType]. Reflected class fields go through it.
+         * Otherwise build the schema yourself, as in `MapSchema(StringSchema, DoubleSchema)`.
          *
          * ### Classes
          * - An `AS_TYPE` constant, on a companion object or as a Java static → [TypedClassSchema]
          * - Anything else → [ReflectedClassSchema]
          *
-         * The casts inside are unchecked, but the returned schema always matches the class passed
-         * in.
+         * The casts inside are unchecked, but the returned schema always matches the class.
          *
          * ## Cost
          *
-         * Primitives map in constant time. Enums and arrays need class introspection, and a class
-         * schema means reflecting over every field, so results are cached per class in the
-         * registry and the cost is paid once.
+         * A class schema reflects over every field. Results are cached per class in the registry, so
+         * that cost is paid once.
          *
          * ## Examples
          *
@@ -309,9 +294,7 @@ sealed interface FateSchema<T> {
         fun <T : Any> schemaOfClass(cls: Class<T>): FateSchema<T> = schemaOfClass(cls.kotlin)
 
         /**
-         * Automatically creates an appropriate schema for the given class type.
-         *
-         * Inspects the class and picks the schema that fits it.
+         * Creates the schema that fits the given class.
          *
          * ## Supported types
          *
@@ -328,23 +311,20 @@ sealed interface FateSchema<T> {
          *
          * ### Generics
          *
-         * A [Class] carries no type arguments, so `Map` and `Collection` are rejected here. Use
-         * [schemaOfType] when you have a [kotlin.reflect.KType] (which is what reflected class
-         * *fields* go through), or build the schema yourself, e.g.
-         * `MapSchema(StringSchema, DoubleSchema)`.
+         * A [Class] has no type arguments, so `Map` and `Collection` are rejected here. Use
+         * [schemaOfType] if you have a [kotlin.reflect.KType]. Reflected class fields go through it.
+         * Otherwise build the schema yourself, as in `MapSchema(StringSchema, DoubleSchema)`.
          *
          * ### Classes
          * - An `AS_TYPE` constant, on a companion object or as a Java static → [TypedClassSchema]
          * - Anything else → [ReflectedClassSchema]
          *
-         * The casts inside are unchecked, but the returned schema always matches the class passed
-         * in.
+         * The casts inside are unchecked, but the returned schema always matches the class.
          *
          * ## Cost
          *
-         * Primitives map in constant time. Enums and arrays need class introspection, and a class
-         * schema means reflecting over every field, so results are cached per class in the
-         * registry and the cost is paid once.
+         * A class schema reflects over every field. Results are cached per class in the registry, so
+         * that cost is paid once.
          *
          * ## Examples
          *
@@ -424,24 +404,23 @@ sealed interface FateSchema<T> {
         inline fun <reified T : Any> registerSchema(schema: FateSchema<T>) = registerSchema(T::class, schema)
 
         /**
-         * Creates a schema for a fully resolved Kotlin type, honouring generic type arguments.
+         * Creates a schema for a fully resolved Kotlin type, using its generic type arguments.
          *
-         * Unlike [schemaOfClass], which only ever sees the erased class, this understands
-         * `Map<K, V>`, `List<T>`, `Set<T>` and `Collection<T>`:
+         * [schemaOfClass] only sees the erased class. This also handles `Map<K, V>`, `List<T>`,
+         * `Set<T>` and `Collection<T>`:
          *
-         * - `Map<K, V>` becomes a [MapSchema] with independently inferred key and value schemas.
-         * - `List`/`Set`/`Collection<T>` are encoded with the ARRAY wire format, via a
-         *   [TranslatedSchema] over an [ArraySchema], so they are byte-identical to `T[]`.
-         * - Everything else defers to [schemaOfClass], preserving its exact behavior.
+         * - `Map<K, V>` becomes a [MapSchema] with key and value schemas inferred separately.
+         * - `List`, `Set` and `Collection<T>` use the ARRAY format through a [TranslatedSchema] over
+         *   an [ArraySchema], so their bytes match `T[]`.
+         * - Anything else goes to [schemaOfClass].
          *
          * A schema registered for a class with [registerSchema] always wins, for every
          * parameterization of that class.
          *
          * @param type The type to build a schema for
          * @return A schema capable of serializing values of [type]
-         * @throws IllegalArgumentException if [type], or any of its type arguments, cannot be
-         *   schematized. Star projections, type variables, `Any`, and nullable type arguments are
-         *   all rejected.
+         * @throws IllegalArgumentException if [type] or any of its type arguments has no schema.
+         *   Star projections, type variables and `Any` are rejected.
          */
         @JvmStatic
         fun schemaOfType(type: KType): FateSchema<*> = schemaOfType(type, type.toString())
@@ -449,13 +428,13 @@ sealed interface FateSchema<T> {
         /**
          * Creates a schema for a fully resolved Kotlin type.
          *
-         * @param path Human-readable description of where this type came from, used in diagnostics
-         *   (for example `"com.example.Holder.items"`).
+         * @param path Where this type came from, such as `"com.example.Holder.items"`. Error
+         *   messages include it.
          * @see schemaOfType
          */
         internal fun schemaOfType(type: KType, path: String): FateSchema<*> {
-            // A nullable type is the non-null one behind a presence byte. Unwrap first so every
-            // rule below sees the underlying type, then wrap the result.
+            // A nullable type is the non-null type behind a presence byte. Unwrap it first so the
+            // rules below see the underlying type, then wrap the result.
             if (type.isMarkedNullable) {
                 @Suppress("UNCHECKED_CAST")
                 val valueSchema = schemaOfType(type.withNullability(false), path) as FateSchema<Any>
@@ -472,12 +451,12 @@ sealed interface FateSchema<T> {
                 )
             }
 
-            // An explicitly registered schema wins, for every combination of type arguments. This
-            // is the escape hatch for Map, Collection and anything else inference rejects.
+            // A registered schema wins for every combination of type arguments. This is how you
+            // handle a Map, a Collection or anything else inference rejects.
             registry[classifier]?.let { return it }
             parameterizedRegistry[type]?.let { return it }
 
-            // Optional<T> says what T? says, so it gets the same OPTIONAL tag and the same bytes.
+            // Optional<T> means the same as T?, so it has the same OPTIONAL tag and bytes.
             if (classifier == java.util.Optional::class) {
                 requireArity(path, type, 1, "Optional")
                 @Suppress("UNCHECKED_CAST")
@@ -488,8 +467,8 @@ sealed interface FateSchema<T> {
             val isMap = classifier.isSubclassOf(Map::class)
             val isCollection = classifier.isSubclassOf(Collection::class)
 
-            // Everything that is neither a Map nor a Collection keeps the pre-existing behavior:
-            // primitives, enums, arrays (including primitive arrays), and plain classes.
+            // Primitives, enums, arrays (including primitive arrays) and plain classes are neither
+            // a Map nor a Collection, so schemaOfClass handles them.
             if (!isMap && !isCollection) return schemaOfClass(classifier)
 
             @Suppress("UNCHECKED_CAST")
@@ -511,11 +490,11 @@ sealed interface FateSchema<T> {
         }
 
         /**
-         * Resolves the schema for the type argument at [index] of [owner], rejecting anything that
-         * carries too little type information to encode.
+         * Resolves the schema for the type argument at [index] of [owner]. Throws if the argument
+         * has too little type information to encode.
          *
-         * A nullable argument is wrapped in an [OptionalSchema] by [schemaOfType], the same as a
-         * nullable property.
+         * [schemaOfType] wraps a nullable argument in an [OptionalSchema], the same as a nullable
+         * property.
          */
         private fun schemaOfArgument(owner: KType, index: Int, path: String): FateSchema<*> {
             val position = "type argument #${index + 1}"
@@ -533,9 +512,9 @@ sealed interface FateSchema<T> {
                 )
             }
 
-            // `Any` is rejected only in type-argument position: a heterogeneous Map<String, Any>
-            // has no fixed shape. The registry check comes first so a user-registered schema for
-            // Any::class still wins.
+            // `Any` is rejected only as a type argument, because a Map<String, Any> has no fixed
+            // shape. The registry check comes first so a schema registered for Any::class still
+            // wins.
             if (argClassifier !in registry.keys && argClassifier == Any::class) {
                 throw unschemable(
                     path, owner, "$position is 'kotlin.Any', which carries no field information"
@@ -561,8 +540,8 @@ sealed interface FateSchema<T> {
         )
 
         /**
-         * Clears all inferred and registered schemas. Intended for test isolation, since a schema
-         * registered for a widely used class would otherwise leak across tests in the same JVM.
+         * Clears all inferred and registered schemas. Tests use this so a schema registered for a
+         * common class does not leak into other tests in the same JVM.
          */
         internal fun clearInferenceCaches() {
             registry.clear()
@@ -571,12 +550,12 @@ sealed interface FateSchema<T> {
         }
 
         /**
-         * JVM primitives the format cannot encode, mapped to the type to widen to.
+         * JVM primitives the format cannot encode, each mapped to the type to widen to.
          *
          * Without this guard they fall through to [ReflectedClassSchema], which finds no public
-         * properties on a boxed primitive and encodes zero bytes. The write succeeds and the value
-         * is silently missing from the log, which is the worst way to lose data. Their arrays are
-         * covered too: `short[]` resolves its component type through here first.
+         * properties on a boxed primitive and encodes zero bytes. The write would succeed and the
+         * value would be missing from the log. Arrays are covered too, because `short[]` resolves
+         * its component type through here first.
          */
         private val UNSUPPORTED_PRIMITIVES: Map<Class<*>, String> = mapOf(
             Short::class.java to "Int", java.lang.Short::class.java to "Int",
@@ -599,9 +578,9 @@ sealed interface FateSchema<T> {
             BooleanArray::class.java -> BooleanArraySchema
             FloatArray::class.java -> FloatArraySchema
 
-            // OptionalInt/Long/Double are concrete, so unlike Optional<T> they need no type
-            // argument. Without these they would reflect to a struct with no fields and encode
-            // nothing at all.
+            // OptionalInt, OptionalLong and OptionalDouble need no type argument, unlike
+            // Optional<T>. Without these cases they would reflect to a class with no fields and
+            // encode nothing.
             java.util.OptionalInt::class.java -> OptionalIntSchema
             java.util.OptionalLong::class.java -> OptionalLongSchema
             java.util.OptionalDouble::class.java -> OptionalDoubleSchema
@@ -609,8 +588,8 @@ sealed interface FateSchema<T> {
                 if (cls.isEnum) {
                     EnumSchema(cls as Class<out Enum<*>>)
                 } else if (cls.isArray) {
-                    // Checked before the map/collection guard below: an array's component type is
-                    // preserved on the Class, so arrays need no type-argument information.
+                    // Checked before the map/collection guard below. A Class keeps an array's
+                    // component type, so arrays need no type arguments.
                     ArraySchema(schemaOfClass(cls.componentType!!))
                 } else if (cls == java.util.Optional::class.java) {
                     throw IllegalArgumentException(

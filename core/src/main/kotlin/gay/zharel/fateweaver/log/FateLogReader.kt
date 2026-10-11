@@ -23,23 +23,19 @@ import java.io.InputStream
 import java.nio.ByteBuffer
 import kotlin.collections.iterator
 
-/**
- * Represents a log entry read from a log file.
- */
+/** One entry read from a log. */
 sealed class FateLogEntry {
-    /**
-     * Schema definition entry for a channel.
-     */
+    /** Defines a channel. */
     data class Schema(
         val channelName: String,
         val schema: FateSchema<*>
     ) : FateLogEntry()
 
     /**
-     * Message entry containing data for a channel.
+     * One value for a channel.
      *
-     * [timestamp] is when the value was logged, in nanoseconds on the logging clock, or `null` for
-     * logs older than version 3, which did not record one.
+     * [timestamp] is when the value was logged, in nanoseconds on the logging clock. It is `null`
+     * for logs older than version 3, which didn't record it.
      */
     data class Message<T>(
         val channelIndex: Int,
@@ -49,9 +45,7 @@ sealed class FateLogEntry {
     ) : FateLogEntry()
 }
 
-/**
- * Reads log files created by [FateLogWriter].
- */
+/** Reads logs written by [FateLogWriter], one entry at a time. */
 class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<FateLogEntry> {
 
     private val channels = mutableListOf<ChannelInfo>()
@@ -127,8 +121,8 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
                 else -> throw IllegalArgumentException("Unknown entry type: $entryType")
             }
         } catch (e: IllegalArgumentException) {
-            // A malformed entry is not the same as a truncated one: entries are not
-            // length-prefixed, so everything after it would be misread. Surface it.
+            // A malformed entry is not a truncated one. Entries aren't length-prefixed, so
+            // everything after a bad one would be misread. Rethrow it.
             throw e
         } catch (_: Exception) {
             return null // End of file or error
@@ -176,9 +170,9 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
     }
 
     /**
-     * Rejects a schema tag introduced after the header version claims to support it. A version 1
-     * header promises only tags 0-7, so a MAP or OPTIONAL tag there means the stream is misaligned
-     * or the header is wrong, and decoding further would produce garbage.
+     * Rejects a schema tag that is newer than the header's version. MAP and OPTIONAL came in version
+     * 2, so seeing one under a version 1 header means the stream is misaligned or the header is
+     * wrong. Decoding on would produce garbage.
      */
     private fun <T> requireVersion2(tag: Int, name: String, read: () -> T): T {
         if (version < 2) {
@@ -224,8 +218,8 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
 
     @Suppress("UNCHECKED_CAST")
     private fun readMapSchema(): MapSchema<Any, Any> {
-        // Both calls consume from the same stream, and the writer emits the key schema first,
-        // so these must stay as separate ordered statements.
+        // Both reads consume the same stream and the writer emits the key schema first, so keep
+        // them as separate statements in this order.
         val keySchema = readSchema() as FateSchema<Any>
         val valueSchema = readSchema() as FateSchema<Any>
         return MapSchema(keySchema, valueSchema)
@@ -291,8 +285,8 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
     /**
      * Decodes one value.
      *
-     * Returns null only for an absent [OptionalSchema] value, so every nullable in the decoded
-     * tree corresponds to a nullable in the schema.
+     * Returns null only for an absent [OptionalSchema] value, so a null in the decoded tree always
+     * matches an optional in the schema.
      */
     private fun readObject(schema: FateSchema<*>): Any? {
         return when (schema) {
@@ -355,9 +349,9 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
                 elements.toTypedArray()
             }
             is PrimitiveArraySchema<*> -> {
-                // Same wire format as ArraySchema. The reader builds ArraySchema from the ARRAY
-                // tag and never constructs these itself, so this only runs when a caller hands
-                // readObject a writer-side schema. Decode to a boxed array either way.
+                // Same wire format as ArraySchema. The reader builds ArraySchema from the ARRAY tag,
+                // so this only runs if a caller passes readObject a writer-side schema. It decodes
+                // to a boxed array either way.
                 val lengthBytes = ByteArray(4)
                 stream.read(lengthBytes)
                 val length = ByteBuffer.wrap(lengthBytes).int
@@ -369,8 +363,8 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
                 elements.toTypedArray()
             }
             is OptionalSchema<*> -> readOptional(schema.valueSchema)
-            // Optional<T> shares the OPTIONAL tag, so it decodes the same way. The reader always
-            // builds OptionalSchema from the tag and only sees these if handed a writer schema.
+            // Optional<T> shares the OPTIONAL tag and decodes the same way. The reader builds
+            // OptionalSchema from the tag, so it only sees these if given a writer-side schema.
             is JavaOptionalSchema<*> -> readOptional(schema.valueSchema)
             is PrimitiveOptionalSchema<*> -> readOptional(schema.valueSchema)
             is MapSchema<*, *> -> {
@@ -380,9 +374,8 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
                 val count = ByteBuffer.wrap(countBytes).int
                 require(count >= 0) { "Invalid map entry count: $count" }
 
-                // Read entries in on-wire order. The pre-sized capacity is capped so a corrupt
-                // count cannot allocate its way to an OutOfMemoryError; the loop below fails
-                // naturally once the stream runs dry.
+                // Keep entries in wire order. The initial capacity is capped so a corrupt count
+                // can't cause an OutOfMemoryError. The loop fails once the stream runs dry.
                 val entries = LinkedHashMap<Any?, Any?>(minOf(count, 1024))
                 repeat(count) {
                     val key = readObject(schema.keySchema)
@@ -397,7 +390,7 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
                     val fieldValue = readObject(fieldSchema)
                     fieldValues[fieldName] = fieldValue
                 }
-                // Return a map of field values since we can't reconstruct the actual class
+                // The original class isn't available, so return the fields as a map.
                 fieldValues
             }
             is CustomStructSchema<*> -> {
@@ -406,7 +399,7 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
                     val fieldValue = readObject(componentSchema)
                     components[name] = fieldValue
                 }
-                // Return a map of field values since we can't reconstruct the actual class
+                // The original class isn't available, so return the components as a map.
                 components
             }
             is TranslatedSchema<*, *> -> {
@@ -415,19 +408,13 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
         }
     }
 
-    /**
-     * Returns all channels that have been registered in the log.
-     */
+    /** Returns the channels whose schema entries have been read so far. */
     fun getChannels(): List<ChannelInfo> = channels.toList()
 
-    /**
-     * Returns the channel info for the given index.
-     */
+    /** Returns the channel at [index], or null if its schema entry hasn't been read. */
     fun getChannel(index: Int): ChannelInfo? = channels.getOrNull(index)
 
-    /**
-     * Returns all entries in the log as a list.
-     */
+    /** Reads every remaining entry into a list. This consumes the reader. */
     fun readAll(): List<FateLogEntry> {
         val entries = mutableListOf<FateLogEntry>()
         while (hasNext()) {
@@ -436,9 +423,7 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
         return entries
     }
 
-    /**
-     * Returns all message entries for the given channel name.
-     */
+    /** Reads every remaining entry and returns the messages for [channelName]. */
     fun readMessagesForChannel(channelName: String): List<FateLogEntry.Message<*>> {
         return readAll().filterIsInstance<FateLogEntry.Message<*>>()
             .filter { it.channelName == channelName }
@@ -449,16 +434,12 @@ class FateLogReader(private val stream: InputStream) : AutoCloseable, Iterator<F
     }
 
     companion object Companion {
-        /**
-         * Creates a LogReader for the given file.
-         */
+        /** Creates a reader for [file]. */
         fun create(file: File): FateLogReader {
             return FateLogReader(FileInputStream(file))
         }
 
-        /**
-         * Creates a LogReader for the given file path.
-         */
+        /** Creates a reader for the file at [filePath]. */
         fun create(filePath: String): FateLogReader {
             return create(File(filePath))
         }

@@ -9,9 +9,9 @@ import java.util.OptionalLong
 /**
  * A schema for values that may be absent, wrapping the schema for the value itself.
  *
- * You rarely construct one directly. A nullable property picks this up automatically, so
- * `class Target(val pose: Pose?)` encodes `pose` as an optional POSE without you asking. It also
- * works in type-argument position: `Map<String, Double?>` and `List<String?>` both infer.
+ * You rarely build one yourself. A nullable property gets one automatically, so
+ * `class Target(val pose: Pose?)` encodes `pose` as an optional POSE. Nullable type arguments work
+ * too, as in `Map<String, Double?>` and `List<String?>`.
  *
  * ## Binary format
  *
@@ -26,14 +26,13 @@ import java.util.OptionalLong
  * [1 byte: 0x01 present] [value encoded by the inner schema]
  * ```
  *
- * An absent value costs one byte. A present one costs one byte more than it would unwrapped, so
- * making a field nullable that never is null is not free, just cheap.
+ * An absent value costs one byte. A present value costs one byte more than it would unwrapped.
  *
  * ## Decoder compatibility
  *
- * This uses tag 9, added after MAP. Log entries carry no length prefix, so a reader that doesn't
- * know the tag cannot skip the value and will stop at the first channel that uses one. Non-null
- * fields are unaffected and encode exactly as they always have.
+ * This schema uses tag 9, added after MAP. Log entries have no length prefix, so a reader that
+ * doesn't know the tag cannot skip the value. It stops at the first channel that uses one. Non-null
+ * fields encode as before.
  *
  * @param T the value type when present
  * @param valueSchema schema used to encode the value when it is present
@@ -66,15 +65,14 @@ class OptionalSchema<T : Any>(val valueSchema: FateSchema<T>) : FateSchema<T?> {
 /**
  * A schema for [java.util.Optional], encoded exactly like [OptionalSchema].
  *
- * `Optional<T>` is the Java way to say what Kotlin says with `T?`, so it gets the same OPTIONAL tag
- * and the same bytes. A reader cannot tell the two apart and decodes both to a value or null.
+ * `Optional<T>` means the same as Kotlin's `T?`, so it has the same OPTIONAL tag and the same
+ * bytes. A reader cannot tell the two apart.
  *
- * `Optional<Double>` infers automatically from a declared property. The raw class carries no type
- * argument, so `schemaOfClass(Optional::class.java)` is rejected the same way a raw `Map` is.
+ * `Optional<Double>` infers from a declared property. The raw class has no type argument, so
+ * `schemaOfClass(Optional::class.java)` is rejected, the same as a raw `Map`.
  *
- * A null `Optional` reference is not the same as an empty one and is rejected. `Optional` is
- * documented never to be null, so a null there is a bug worth surfacing rather than quietly
- * recording as absent.
+ * A null `Optional` reference is rejected, not recorded as absent. `Optional` is never supposed to
+ * be null, so a null there is a bug.
  *
  * @param T the value type when present
  * @param valueSchema schema used to encode the value when it is present
@@ -105,8 +103,8 @@ class JavaOptionalSchema<T : Any>(val valueSchema: FateSchema<T>) : FateSchema<O
 }
 
 /**
- * Base for the primitive `Optional` schemas, which are concrete classes rather than generic ones
- * and so need no type argument to infer.
+ * Base for the schemas of `OptionalInt`, `OptionalLong` and `OptionalDouble`. These classes are not
+ * generic, so inference needs no type argument.
  */
 sealed class PrimitiveOptionalSchema<A : Any>(val valueSchema: FateSchema<*>) : FateSchema<A> {
     override val tag: Int = FateSchema.TypeRegistry.OPTIONAL.value

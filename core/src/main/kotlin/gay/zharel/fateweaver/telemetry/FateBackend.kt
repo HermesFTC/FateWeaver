@@ -5,12 +5,12 @@ import gay.zharel.fateweaver.schemas.FateSchema
 /**
  * Where one path's values end up.
  *
- * A [FateTable] builds one entry per path the first time a value is logged there, fixing the
- * schema, and then feeds every later value for that path through it.
+ * A [FateTable] builds one entry per path the first time a value is logged there, which fixes the
+ * schema. Every later value for that path goes through the same entry.
  *
- * Implementations must be safe to call from any thread, and must not throw: report a recoverable
- * problem through the registry's warning handler (or just drop the value) rather than letting it
- * reach the robot code that logged it.
+ * Implementations must be safe to call from any thread and must not throw. To report a problem,
+ * use the registry's warning handler or drop the value. Don't let it reach the robot code that
+ * logged it.
  *
  * @param T The type of value this entry accepts
  */
@@ -38,9 +38,10 @@ interface FateBackend : AutoCloseable {
      * Returns the entry for [path], creating it if this backend has not seen the path.
      *
      * [path] is the full, slash-separated name, such as `Drive/leftVelocity`, and [schema] is the
-     * schema every value on it will use. Calling this again for a path already created is expected,
-     * because a table rebuilds its entries whenever the registry's backends change, and must hand
-     * back an entry that still works rather than fail on the duplicate.
+     * schema every value on it will use.
+     *
+     * A table calls this again for an existing path whenever the registry's backends change. Return
+     * an entry that works instead of failing on the duplicate.
      */
     fun <T> entry(path: String, schema: FateSchema<T>): FateEntry<T>
 }

@@ -10,16 +10,6 @@ private const val KEY_LIVE_ENABLED = "liveEnabled"
 /**
  * Whether [FlightProjector] is allowed to bind its port, remembered across robot restarts.
  *
- * The FTC 2026-2027 competition manual prohibits live streaming from third-party libraries during
- * competition, so live streaming is for testing and tuning only. Switching it off has to survive
- * every restart for the rest of an event, or a team would have to remember to disable it again
- * every time the Robot Controller comes back up.
- *
- * This mirrors how FTC Dashboard remembers its own enable/disable state: an Android
- * [SharedPreferences] entry, defaulting to on, written by the same call that starts or stops the
- * server. FateWeaver keeps its own preferences file rather than writing into the Robot
- * Controller's default one.
- *
  * @see FlightProjector.setEnabled
  */
 object LiveSettings {
@@ -28,10 +18,9 @@ object LiveSettings {
     }
 
     /**
-     * Whether live streaming is permitted. Writing this persists the choice immediately.
+     * Whether live streaming is permitted. Defaults to `true`. Writing this saves the choice.
      *
-     * Setting this alone does not start or stop a running server; use [FlightProjector.setEnabled],
-     * which does both.
+     * Setting this does not start or stop the server. Use [FlightProjector.setEnabled] for that.
      */
     @JvmStatic
     var enabled: Boolean

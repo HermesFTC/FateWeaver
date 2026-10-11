@@ -77,8 +77,8 @@ object FateDashboard {
                 )
             }
 
-            // Turning this off closes the server and unbinds the port, and is remembered across
-            // robot restarts. Required before competition matches; see FlightProjector.
+            // Turning this off closes the server and unbinds the port. The choice persists across
+            // robot restarts. See FlightProjector for when to turn it off.
             get("/fate/live/enable") { req, res ->
                 val on = req.query("on") ?: return@get res.badRequest("Missing 'on' parameter")
                 if (on != "true" && on != "false") {
@@ -94,7 +94,7 @@ object FateDashboard {
             get("/fate/logs/download") { req, res ->
                 val fileName = req.query("file") ?: return@get res.badRequest("Missing 'file' parameter")
                 
-                // Security: disallow path traversal and restrict to log files
+                // Reject path traversal and anything that is not a log file
                 if (fileName.contains("/") || fileName.contains("\\") || !fileName.endsWith(EXT)) {
                     return@get res.forbidden("Invalid file name")
                 }

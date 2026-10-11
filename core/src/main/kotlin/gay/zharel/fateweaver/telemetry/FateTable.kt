@@ -8,8 +8,8 @@ import kotlin.reflect.typeOf
 /**
  * An object that knows how to publish itself into a [FateTable].
  *
- * Implement this for a type that is really several values, so call sites log one object and the
- * type decides what appears under it:
+ * Implement this for a type that is several values. Call sites log one object, and the type decides
+ * what appears under it:
  *
  * ```kotlin
  * class DriveState(val left: Double, val right: Double, val pose: Pose) : FateLoggable {
@@ -49,17 +49,17 @@ fun interface FateLoggable {
  * ```
  *
  * A path holds one type of value for as long as the program runs. Logging a different type to it
- * reports a warning and skips the value rather than corrupting the log. Telemetry never throws into
- * the code that calls it: a value it can't log is reported through the registry's warning handler.
+ * warns and skips the value. Telemetry never throws into the code that calls it. It reports a value
+ * it can't log through the registry's warning handler.
  *
- * A table may be used from any thread. A call is the unit of thread safety, and concurrent calls to
- * one path are safe but land in no guaranteed order. Telemetry does not guard the objects you hand
- * it, so don't mutate a value while it is being logged.
+ * A table may be used from any thread. Concurrent calls to one path are safe but land in no
+ * guaranteed order. Telemetry does not guard the objects you pass in, so don't mutate a value while
+ * it is being logged.
  *
  * The schema of a value comes from its type, the same way [gay.zharel.fateweaver.log.FateLogWriter]
  * infers it. In Kotlin, `log` is a reified extension, so a parameterized value such as a
- * `Map<String, Double>` keeps its type arguments. Java sees [logErased] as `log`, which only has the
- * runtime class to go on and so rejects maps and collections.
+ * `Map<String, Double>` keeps its type arguments. Java sees [logErased] as `log`. It only has the
+ * runtime class to go on, so it rejects maps and collections.
  *
  * @property path The slash-separated path of this table, empty for the root.
  */
@@ -73,9 +73,9 @@ class FateTable internal constructor(
     /**
      * What a table remembers about one path.
      *
-     * [key] is what the path was first logged as: the [KType] when it had type arguments, else the
-     * value's class. [entry] is `null` for a path whose schema could not be inferred, so a value
-     * that can never be logged is skipped cheaply instead of failing the same way every loop.
+     * [key] is what the path was first logged as, either the [KType] when it had type arguments or
+     * the value's class. [entry] is `null` when the schema could not be inferred, so a value that
+     * can never be logged is skipped instead of failing the same way every loop.
      */
     private class Slot(
         val generation: Long,
@@ -113,9 +113,8 @@ class FateTable internal constructor(
      * Logs [value] at [name] in this table, inferring its schema from the fully resolved [type]
      * rather than from [value]'s erased runtime class.
      *
-     * This is what the reified `log` extension calls. Call it directly if you got a [KType] some
-     * other way. [type] only matters when it has type arguments, since that is the one thing the
-     * runtime class can't supply.
+     * The reified `log` extension calls this. Call it directly if you have a [KType] from somewhere
+     * else. [type] only matters when it has type arguments, which the runtime class can't supply.
      */
     fun logTyped(name: String, value: Any, type: KType) = guarded(name) { logValue(name, value, type) }
 
@@ -177,8 +176,8 @@ class FateTable internal constructor(
             create(name, key, value, type, generation)
         }
 
-        // Two threads can race to set up one path; the first one in wins, and the loser's value is
-        // checked against the winner's type like any other later value.
+        // Two threads can race to set up one path. The first one in wins, and the loser's value is
+        // checked against the winner's type like any later value.
         return slots.compute(name) { _, current ->
             if (current != null && current.generation == generation) current else fresh
         }
@@ -206,10 +205,9 @@ class FateTable internal constructor(
     /**
      * Whether [value], of type [key], belongs on a path established as [slotKey].
      *
-     * Two parameterized types must match exactly. Otherwise a path that was set up from a runtime
-     * class accepts instances of it, and one set up from a parameterized type accepts anything,
-     * since an unparameterized value has no type arguments to contradict it and a wrong one fails
-     * when it is encoded.
+     * Two parameterized types must match exactly. A path set up from a runtime class accepts
+     * instances of it. A path set up from a parameterized type accepts any unparameterized value,
+     * because it has no type arguments to contradict, and a wrong one fails when it is encoded.
      */
     private fun compatible(slotKey: Any, key: Any, value: Any): Boolean = when {
         slotKey == key -> true
@@ -228,7 +226,7 @@ class FateTable internal constructor(
 /**
  * Logs [value] at [name], inferring its schema from [T]'s static type, type arguments included.
  *
- * This is the Kotlin form of [FateTable.logErased], and the one that can log a parameterized value:
+ * This is the Kotlin form of [FateTable.logErased]. It can log a parameterized value:
  *
  * ```kotlin
  * table.log("powers", mapOf("fl" to 0.5))    // Map<String, Double>
@@ -236,8 +234,8 @@ class FateTable internal constructor(
  * table.log("voltage", battery.voltage)      // Double
  * ```
  *
- * It is an extension rather than a member because a member would erase to the same JVM signature as
- * [FateTable.logErased]. See [FateTable] for how a path's type is fixed.
+ * It is an extension because a member would have the same JVM signature as [FateTable.logErased].
+ * See [FateTable] for how a path's type is fixed.
  */
 @JvmSynthetic
 inline fun <reified T : Any> FateTable.log(name: String, value: T) = logTyped(name, value, typeOf<T>())

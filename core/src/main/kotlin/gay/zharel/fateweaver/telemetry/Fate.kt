@@ -14,11 +14,11 @@ import kotlin.reflect.typeOf
  * drive.log("pose", follower.pose)
  * ```
  *
- * Where the values go depends on which backends are registered on [registry]. On a robot that is
- * set up for you; in a unit test, register a [MockFateBackend] and read back what was logged.
+ * Values go to the backends registered on [registry]. On a robot, FateLogManager registers one for
+ * each OpMode. In a unit test, register a [MockFateBackend] and read back what was logged.
  *
- * Everything here forwards to the root table, so see [FateTable] for how values are typed, what a
- * path holds, and what thread safety to expect.
+ * Everything here forwards to the root table. See [FateTable] for how values are typed, what a path
+ * holds, and what thread safety to expect.
  */
 object Fate {
     /** The registry this facade logs through. */

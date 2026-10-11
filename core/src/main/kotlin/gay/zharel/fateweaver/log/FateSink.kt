@@ -3,32 +3,30 @@ package gay.zharel.fateweaver.log
 import java.io.OutputStream
 
 /**
- * A destination for the bytes a [FateLogWriter] produces.
+ * Receives the bytes a [FateLogWriter] produces.
  *
- * The three entry kinds are separate methods rather than one `write(ByteArray)` because a sink that
- * serves late-joining readers has to replay the header and every schema entry before it can send a
- * message entry. Channel indices are positional, so a reader that missed a schema entry cannot
- * decode anything that references it. A sink that doesn't care, like [StreamSink], simply treats
- * all three the same.
+ * The three entry kinds are separate methods because a sink that serves late-joining readers must
+ * replay the header and every schema entry before it sends a message entry. Channel indices are
+ * positional, so a reader that missed a schema entry can't decode messages for that channel. A sink
+ * that doesn't care, like [StreamSink], treats all three the same.
  *
- * Every array handed to these methods is one complete entry, exactly sized, ready to go on the
- * wire as-is.
+ * Each array passed in is one complete entry, exactly sized, ready to send as is.
  *
- * Implementations must tolerate calls from arbitrary threads.
+ * Implementations must tolerate calls from any thread.
  */
 interface FateSink : AutoCloseable {
     /**
      * The 4-byte magic and version that open a log.
      *
-     * A second call means a new log has started on the same sink, which is what happens when a
-     * fresh OpMode begins while a live reader is still attached.
+     * A second call means a new log has started on the same sink. That happens when a new OpMode
+     * starts while a live reader is still attached.
      */
     fun header(bytes: ByteArray)
 
-    /** A complete schema entry (kind 0), declaring the channel at the next index. */
+    /** A complete schema entry (kind 0). It declares the channel at the next index. */
     fun schemaEntry(bytes: ByteArray)
 
-    /** A complete message entry (kind 1), carrying one value for an already declared channel. */
+    /** A complete message entry (kind 1). It carries one value for an already declared channel. */
     fun messageEntry(bytes: ByteArray)
 
     /** Pushes anything buffered onward. */
@@ -36,10 +34,9 @@ interface FateSink : AutoCloseable {
 }
 
 /**
- * Writes every entry straight through to [stream], making no distinction between the entry kinds.
+ * Writes every entry to [stream] as is, whatever its kind.
  *
- * This is the sink behind ordinary file logging, and the one [FateLogWriter]'s [OutputStream]
- * constructor wraps.
+ * [FateLogWriter]'s [OutputStream] constructor wraps a stream in one of these.
  */
 class StreamSink(val stream: OutputStream) : FateSink {
     override fun header(bytes: ByteArray) = stream.write(bytes)
@@ -59,10 +56,9 @@ class StreamSink(val stream: OutputStream) : FateSink {
 }
 
 /**
- * Fans every entry out to [sinks], in order.
+ * Sends every entry to each of [sinks], in order.
  *
- * This is what lets one [FateLogWriter] record to a file and broadcast to live readers at the same
- * time without either knowing about the other.
+ * Use it to record to a file and broadcast to live readers from one [FateLogWriter].
  */
 class MultiSink(private val sinks: List<FateSink>) : FateSink {
     constructor(vararg sinks: FateSink) : this(sinks.toList())

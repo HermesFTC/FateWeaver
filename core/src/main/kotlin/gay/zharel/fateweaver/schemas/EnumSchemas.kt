@@ -3,10 +3,11 @@ package gay.zharel.fateweaver.schemas
 import java.nio.ByteBuffer
 
 /**
- * A schema for enum constants, encoded as their 4-byte ordinal.
+ * Encodes an enum constant as its 4-byte ordinal.
  *
- * The value type is [T] itself rather than `Enum<T>`, so a channel built from this schema is a
- * `LogChannel<MyEnum>` and composes naturally as a map key or array element type.
+ * The schema lists the constant names, so a reader can show names instead of ordinals. The value
+ * type is [T], not `Enum<T>`, so a channel is a `LogChannel<MyEnum>` and the schema works as a map
+ * key or array element.
  */
 class EnumSchema<T : Enum<T>>(val enumClass: Class<out Enum<T>>) : FateSchema<T> {
     init {
@@ -40,7 +41,8 @@ class EnumSchema<T : Enum<T>>(val enumClass: Class<out Enum<T>>) : FateSchema<T>
 }
 
 /**
- * A schema for enums that preserves the constant names for decoding.
+ * Writes the same bytes as [EnumSchema], but takes the constant name as a String instead of an
+ * enum value. Throws [IllegalArgumentException] for a name that is not in [constantNames].
  */
 class DynamicEnumSchema(val constantNames: List<String>) : FateSchema<String> {
     override val tag: Int = FateSchema.TypeRegistry.ENUM.value

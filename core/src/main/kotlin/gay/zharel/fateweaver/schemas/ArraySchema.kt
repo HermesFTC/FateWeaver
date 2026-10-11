@@ -5,9 +5,9 @@ import java.nio.ByteBuffer
 /**
  * A schema for arrays of [T], written as a 4-byte element count followed by each element.
  *
- * `List`, `Set` and `Collection` fields use this same wire format, so a `List<Double>` field is
- * byte-identical to a `Double[]` field. Kotlin's primitive arrays have their own schemas
- * ([DoubleArraySchema] and friends), which produce the same bytes without boxing.
+ * `List`, `Set` and `Collection` fields use the same format, so a `List<Double>` field has the same
+ * bytes as a `Double[]` field. Kotlin's primitive arrays have their own schemas
+ * ([DoubleArraySchema] and friends) that write the same bytes without boxing.
  *
  * ## Binary format
  *
@@ -46,16 +46,15 @@ class ArraySchema<T>(val elementSchema: FateSchema<T>) : FateSchema<Array<T>> {
 }
 
 /**
- * Base for the primitive-array schemas.
+ * Base for the schemas of Kotlin's primitive arrays.
  *
- * [ArraySchema] cannot encode a `double[]`: it is a `FateSchema<Array<T>>`, so its methods erase to
- * taking `Object[]`, and a primitive array is not one. Boxing through `toTypedArray()` would work
- * but allocates a whole array on every [objSize] and every [encodeObject], which is twice per
- * logged value on a channel written each loop.
+ * [ArraySchema] cannot encode a `double[]`. It is a `FateSchema<Array<T>>`, so its methods erase to
+ * take `Object[]`, and a primitive array is not one. Boxing with `toTypedArray()` would allocate a
+ * whole array in every [objSize] and [encodeObject] call, which is twice per logged value.
  *
- * These schemas write the ARRAY wire format directly instead, so the bytes are identical to the
- * boxed equivalent and readers need no changes. [elementSchema] describes an element for the schema
- * blob and for decoding; on the write side elements are encoded inline, without going through it.
+ * These schemas write the ARRAY format directly. The bytes match the boxed version, so readers need
+ * no changes. [elementSchema] describes an element in the schema blob. Writing does not go through
+ * it, because elements are encoded inline.
  */
 sealed class PrimitiveArraySchema<A : Any>(
     val elementSchema: FateSchema<*>,
@@ -111,8 +110,8 @@ object LongArraySchema : PrimitiveArraySchema<LongArray>(LongSchema, Long.SIZE_B
 /**
  * Encodes a [FloatArray] as an array of DOUBLE, widening each element.
  *
- * The format has no float type. Widening is exact, so nothing is lost, but the encoded array is
- * twice the size of the input.
+ * The format has no float type. Widening is exact, but the encoded array is twice the size of the
+ * input.
  */
 object FloatArraySchema : PrimitiveArraySchema<FloatArray>(DoubleSchema, Double.SIZE_BYTES) {
     override fun sizeOf(obj: FloatArray): Int = obj.size

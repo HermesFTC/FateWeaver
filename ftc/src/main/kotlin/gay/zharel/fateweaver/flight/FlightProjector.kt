@@ -19,20 +19,12 @@ import java.util.concurrent.CopyOnWriteArrayList
 private const val TAG = "FlightProjector"
 
 /**
- * Broadcasts the FateWeaver log stream to connected AdvantageScope clients over a WebSocket.
+ * Streams the FateWeaver log to connected AdvantageScope clients over a WebSocket.
  *
- * The bytes on the wire are byte-for-byte the ones a `.fate` file would contain, so AdvantageScope
- * decodes a live stream with the same decoder it uses for files. A client that connects partway
- * through an OpMode is first sent the header and every schema entry declared so far, in order,
- * because channel indices are positional and a message entry is meaningless without the schema
- * entry it refers to.
- *
- * ## Competition use
- *
- * The FTC 2026-2027 competition manual prohibits live streaming from third-party libraries during
- * competition, so **this is for testing and tuning only**. Call [setEnabled] with `false`, or use
- * the toggle on the FateWeaver dashboard, to close the server and unbind the port; the choice is
- * remembered across robot restarts. See [LiveSettings]. File logging is unaffected either way.
+ * The bytes are the same ones a `.fate` file would contain, so AdvantageScope decodes a live stream
+ * with its file decoder. A client that connects partway through an OpMode first receives the header
+ * and every schema entry declared so far, in order. Channel indices are positional, and a message
+ * entry means nothing without its schema entry.
  *
  * @see FateLogManager.mode
  */
@@ -45,10 +37,9 @@ object FlightProjector : FateSink {
     var port: Int = DEFAULT_PORT
 
     /**
-     * How many entries a client may fall behind by before it is dropped.
+     * How many entries can queue for one client before it is dropped.
      *
-     * A laptop that stops reading must never stall the OpMode thread, so entries queue per client
-     * and a client that overruns this is disconnected rather than allowed to apply backpressure.
+     * A client that stops reading is disconnected instead of blocking the OpMode thread.
      */
     private const val CLIENT_QUEUE_DEPTH = 2048
 
@@ -106,10 +97,9 @@ object FlightProjector : FateSink {
     }
 
     /**
-     * Turns live streaming on or off and remembers the choice across robot restarts.
+     * Turns live streaming on or off and saves the choice across robot restarts.
      *
-     * This is the switch to use before a competition match. Turning it off closes the server and
-     * unbinds [port], so compliance is verifiable with a port scan rather than a promise.
+     * Turning it off closes the server and unbinds [port].
      */
     @JvmStatic
     fun setEnabled(value: Boolean) {
@@ -118,13 +108,11 @@ object FlightProjector : FateSink {
     }
 
     /**
-     * Registers an OpMode that toggles live streaming, so the switch is reachable from the Driver
-     * Station.
+     * Registers an OpMode that toggles live streaming from the Driver Station.
      *
-     * The web dashboard toggle needs a laptop joined to the robot's network, which is not the
-     * situation a team is in before a match. The Driver Station is the one thing they always have
-     * in front of them, so this is the toggle that will actually get used. FTC Dashboard registers
-     * an equivalent OpMode for the same reason.
+     * The web dashboard toggle needs a laptop on the robot's network, and a team does not always
+     * have one before a match. The Driver Station is always at hand. FTC Dashboard registers an
+     * equivalent OpMode for the same reason.
      */
     @OpModeRegistrar
     @JvmStatic
@@ -172,9 +160,8 @@ object FlightProjector : FateSink {
     /**
      * Releases the port when the Robot Controller app goes away.
      *
-     * The launch-activity guard matches FTC Dashboard's: the SDK also fires this when USB hardware
-     * is attached, and tearing the server down then would leave streaming silently dead until the
-     * next restart.
+     * The launch-activity guard matches FTC Dashboard's. The SDK also fires this when USB hardware
+     * is attached, and stopping the server then would leave streaming dead until the next restart.
      */
     @OnDestroy
     @JvmStatic
@@ -194,8 +181,7 @@ object FlightProjector : FateSink {
             header = bytes
             schemaEntries.clear()
         }
-        // A header is the one thing a client can join on, so this is where anyone still waiting
-        // starts receiving.
+        // A client can only join at a header, so clients still waiting start receiving here.
         broadcast(bytes, primes = true)
     }
 
@@ -209,8 +195,8 @@ object FlightProjector : FateSink {
     override fun flush() {}
 
     /**
-     * Does nothing: the projector outlives any one [gay.zharel.fateweaver.log.FateLogWriter], so
-     * closing an OpMode's writer must not tear down the server or drop connected clients.
+     * Does nothing. The projector outlives any one [gay.zharel.fateweaver.log.FateLogWriter], so
+     * closing an OpMode's writer must not stop the server or drop clients.
      */
     override fun close() {}
 
@@ -220,8 +206,8 @@ object FlightProjector : FateSink {
      * Sends [bytes] to every client that has had a header.
      *
      * Clients that attached while no log was in progress are skipped until [primes] marks them
-     * ready, because entries before a header would be undecodable and would only make a reader
-     * disconnect and retry.
+     * ready. Entries sent before a header can't be decoded and would only make a reader disconnect
+     * and retry.
      */
     private fun broadcast(bytes: ByteArray, primes: Boolean = false) {
         for (client in clients) {
@@ -235,14 +221,14 @@ object FlightProjector : FateSink {
     }
 
     /**
-     * Registers [client] and hands it the current preamble.
+     * Registers [client] and sends it the current header and schema entries.
      *
-     * Held under [lock] so that no entry can be broadcast between snapshotting the preamble and
-     * the client joining the list, which would otherwise let a message entry reach a client ahead
-     * of the schema entry it depends on.
+     * This runs under [lock] so no entry can be broadcast between taking the snapshot and adding
+     * the client to the list. Otherwise a message entry could reach the client before its schema
+     * entry.
      *
-     * With no header to replay — between OpModes, or when streaming was switched on partway
-     * through one — the client attaches idle and starts receiving at the next header.
+     * With no header to replay, between OpModes or when streaming was turned on partway through
+     * one, the client attaches idle and starts receiving at the next header.
      */
     private fun attach(client: ProjectorSocket) {
         synchronized(lock) {
@@ -269,7 +255,7 @@ object FlightProjector : FateSink {
     private class ProjectorSocket(handshake: NanoHTTPD.IHTTPSession) : NanoWSD.WebSocket(handshake) {
         val name: String = handshake.remoteIpAddress ?: "?"
 
-        /** Whether this client has been sent a header and can make sense of what follows. */
+        /** Whether this client has been sent a header and can decode what follows. */
         @Volatile
         var primed = false
 
@@ -281,8 +267,8 @@ object FlightProjector : FateSink {
         /**
          * Drains [queue] onto the socket.
          *
-         * The send has to happen off the OpMode thread: NanoWSD writes synchronously, so a client
-         * that stops reading would otherwise block whatever thread logged the value.
+         * Sending happens off the OpMode thread because NanoWSD writes synchronously. A client that
+         * stops reading would otherwise block the thread that logged the value.
          */
         private val pump = Thread({
             try {
@@ -311,7 +297,7 @@ object FlightProjector : FateSink {
             }
         }
 
-        // pump.start() must precede attach(), which enqueues the preamble: nothing would drain it
+        // Start the pump before attach(), which queues the preamble. Nothing would drain it
         // otherwise.
         override fun onOpen() {
             pump.start()
@@ -324,7 +310,7 @@ object FlightProjector : FateSink {
             initiatedByRemote: Boolean
         ) = shutdown()
 
-        /** Clients are read-only; nothing they send means anything. */
+        /** Clients are read-only, so incoming messages are ignored. */
         override fun onMessage(message: NanoWSD.WebSocketFrame) {}
 
         override fun onPong(pong: NanoWSD.WebSocketFrame) {}

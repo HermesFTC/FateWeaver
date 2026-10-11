@@ -44,15 +44,15 @@ open class ReflectedClassSchema<T : Any>(
     }
 
     /**
-     * Resolved property accessors, keyed by the *runtime* class of the encoded object.
+     * Resolved property accessors, keyed by the runtime class of the encoded object.
      *
-     * A schema built from a superclass may be handed instances of a subclass, so the lookup
-     * cannot be keyed on the class the schema was created from.
+     * A schema built from a superclass can receive subclass instances, so the key can't be the
+     * class the schema was built from.
      */
     private val accessors = ConcurrentHashMap<KClass<*>, List<Accessor>>()
 
     /**
-     * A property paired with the schema used to encode its value, resolved once per runtime class.
+     * A property and the schema that encodes its value, resolved once per runtime class.
      */
     protected class Accessor(val property: KProperty1<Any, *>, val schema: FateSchema<Any?>)
 
@@ -75,10 +75,9 @@ open class ReflectedClassSchema<T : Any>(
     /**
      * Reads [accessor]'s value from [obj].
      *
-     * A null is only allowed when the field's schema is an [OptionalSchema], which is what a
-     * property declared nullable in Kotlin gets. Everything else still rejects null, because
-     * nothing downstream has a way to encode it. The case that reaches this in practice is a Java
-     * field, or a Kotlin platform type, that is declared non-null but isn't.
+     * Null is allowed only when the field's schema is an [OptionalSchema], which is what a property
+     * declared nullable in Kotlin gets. Any other schema can't encode null, so this throws. In
+     * practice that means a Java field or Kotlin platform type that is declared non-null but isn't.
      */
     protected fun valueOf(accessor: Accessor, obj: T): Any? {
         val value = accessor.property.get(obj)
@@ -108,8 +107,8 @@ open class ReflectedClassSchema<T : Any>(
                 val typeProp = cls.companionObject!!.memberProperties.first { it.name.uppercase() == TypedClassSchema.TYPE_FIELD_NAME } as KProperty1<Any?, *>
                 typeProp.get(cls.companionObjectInstance!!)
             } else if (cls.staticProperties.any { it.name.uppercase() == TypedClassSchema.TYPE_FIELD_NAME }) {
-                // A static property has no receiver, so staticProperties yields KProperty0, not
-                // KProperty1. Reading it takes no argument.
+                // staticProperties yields KProperty0 because a static has no receiver, so get()
+                // takes no argument.
                 cls.staticProperties.first { it.name.uppercase() == TypedClassSchema.TYPE_FIELD_NAME }.get()
             } else null
 
@@ -181,17 +180,17 @@ class TypedClassSchema<T : Any>(
 }
 
 /**
- * A schema you define by hand, by naming the components and supplying a function that produces them.
+ * A schema you define by hand. You name the components and supply a function that produces them.
  *
- * Nothing here is reflected, so this is the way in for a class you can't modify, and the way to
- * write fewer bytes than reflection would: drop fields you'll never plot, round a double, convert
- * units, or emit a computed value that isn't a field at all.
+ * Nothing is reflected. Use it for a class you can't modify, or to write fewer bytes than
+ * reflection would. You can drop fields you never plot, round a double, convert units, or emit a
+ * computed value that isn't a field.
  *
  * ## How it works
  *
  * [encoder] turns one object into a list of components. Each component has a name from
- * [componentNames] and a schema from [componentSchemas] at the same index, and they are written in
- * that order behind a leading type string.
+ * [componentNames] and a schema from [componentSchemas] at the same index. They are written in
+ * that order after a leading type string.
  *
  * ## Binary format
  *
@@ -224,7 +223,7 @@ class TypedClassSchema<T : Any>(
  * )
  * ```
  *
- * ### Transforming on the way out
+ * ### Transforming values
  * ```kotlin
  * val transformedSchema = CustomStructSchema<Person>(
  *     type = "NormalizedPerson",
@@ -243,7 +242,7 @@ class TypedClassSchema<T : Any>(
  * )
  * ```
  *
- * ### Selective Field Serialization
+ * ### Logging a subset of fields
  * ```kotlin
  * val minimalSchema = CustomStructSchema<ComplexObject>(
  *     type = "Essential",
@@ -253,51 +252,36 @@ class TypedClassSchema<T : Any>(
  * )
  * ```
  *
- * @param T The type of objects this schema can serialize
- * @param type A string identifier for this object type, written to the log for identification
- * @param componentNames Names of the components in serialization order. Used for schema documentation.
- * @param componentSchemas Schemas for each component, must match the order of [componentNames]
- * @param encoder Function that converts objects of type T into a list of primitive components
- *
- * @constructor Creates a new CustomStructSchema with the specified configuration
+ * @param T The type of objects this schema serializes
+ * @param type Identifier for this object type, written to the log as the first value
+ * @param componentNames Names of the components, in the order they are written
+ * @param componentSchemas Schemas for each component, in the same order as [componentNames]
+ * @param encoder Converts an object into its list of components
  *
  * @throws IllegalArgumentException if componentNames and componentSchemas have different sizes
  */
 class CustomStructSchema<T : Any>(
-    /** String identifier for this object type, included in the serialized data for type safety. */
+    /** Identifier for this object type, written before the components in every encoded object. */
     val type: String,
 
-    /**
-     * Names of the serialized components in order.
-     *
-     * These names are included in the schema metadata for documentation purposes and
-     * potential future deserialization support. They should be descriptive and stable
-     * across schema versions.
-     */
+    /** Names of the components, in the order they are written. They go into the schema entry. */
     val componentNames: List<String>,
 
     /**
-     * Schemas for each component in the same order as [componentNames].
+     * Schemas for each component, in the same order as [componentNames].
      *
-     * Each schema defines how the corresponding component from the [encoder] output
-     * will be serialized. The number and order of schemas must exactly match the
-     * components returned by the encoder function.
+     * The list must line up with what [encoder] returns, in count and order.
      */
     val componentSchemas: List<FateSchema<*>>,
 
     /**
-     * Function that decomposes objects into serializable components.
+     * Converts an object into the values that [componentSchemas] encode.
      *
-     * This function is called during serialization to convert objects of type [T] into
-     * a list of primitive values that can be serialized using the [componentSchemas].
-     * The returned list must:
-     * - Have the same number of elements as [componentSchemas]
-     * - Contain values compatible with the corresponding schemas
-     * - Be deterministic (same object should always produce the same components)
+     * The returned list must have one element per schema, each compatible with its schema. It must
+     * return the same components for the same object.
      *
-     * The writer calls this twice per logged value, once to size the output and once to encode it,
-     * so keep it to field reads and arithmetic. Anything expensive runs at double the rate you
-     * expect.
+     * The writer calls this twice per logged value, once to size the output and once to encode it.
+     * Keep it to field reads and arithmetic, because anything expensive runs twice.
      */
     val encoder: (T) -> List<Any>
 ) : FateSchema<T> {
@@ -348,27 +332,29 @@ class CustomStructSchema<T : Any>(
         }
     }
 
-    /** Internal type field definition used for schema metadata. */
+    /** The name and schema of the leading type string. */
     companion object {
         private val TYPE_FIELD = ".type" to StringSchema
     }
 }
 
 /**
- * A schema for converting objects of type [T] to another type [U] during serialization.
+ * A schema that converts a [T] to a [U] and encodes the result with [baseSchema].
  *
- * @param baseSchema The schema for the base type [T]
- * @param toBase A function that converts objects of type [T] to objects of type [U]
+ * It reports the same tag and schema bytes as [baseSchema], so readers see a [U].
+ *
+ * @param baseSchema The schema for [U]
+ * @param toBase Converts a [T] to a [U]
  */
 class TranslatedSchema<T : Any, U : Any>(
     val baseSchema: FateSchema<U>,
     val toBase: (T) -> U,
 ) : FateSchema<T> {
     /**
-     * Creates a new TranslatedSchema with the specified configuration.
+     * Creates a schema for [baseClass] by inference and uses it as the base schema.
      *
-     * @param baseClass The class of the base type [T]
-     * @param toBase A function that converts objects of type [T] to objects of type [U]
+     * @param baseClass The class of [U]
+     * @param toBase Converts a [T] to a [U]
      */
     constructor(baseClass: Class<U>, toBase: (T) -> U) :
             this(FateSchema.schemaOfClass(baseClass.kotlin), toBase)

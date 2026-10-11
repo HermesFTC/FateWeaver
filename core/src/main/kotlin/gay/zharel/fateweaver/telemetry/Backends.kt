@@ -7,8 +7,8 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Records logged values to a [FateLogWriter], one channel per path.
  *
- * What the writer's sink is decides where that goes: a file, a live stream, or both through a
- * [gay.zharel.fateweaver.log.MultiSink]. Closing this backend closes the writer.
+ * The writer's sink decides where the values go. That can be a file, a live stream, or both through
+ * a [gay.zharel.fateweaver.log.MultiSink]. Closing this backend closes the writer.
  *
  * Each value is written with the timestamp the table gave it, so two backends fed the same value
  * agree on when it happened.
@@ -48,8 +48,8 @@ class FateLogBackend(val writer: FateLogWriter) : FateBackend {
  * assertEquals(listOf(1.5), mock.valuesAt("Drive/left"))
  * ```
  *
- * It is safe to log from several threads. The inspection methods return copies, so what they hand
- * back never changes under you, but they can be stale if logging is still running.
+ * It is safe to log from several threads. The inspection methods return copies, which can be stale
+ * if logging is still running.
  */
 class MockFateBackend : FateBackend {
     /** One logged value. */
