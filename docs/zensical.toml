@@ -17,6 +17,7 @@ nav = [
     { "Registry" = "schemas/registry.md" },
     { "Selection guide" = "schemas/guide.md" },
   ] },
+  { "API reference" = "https://fate.zharel.gay/api/" },
 ]
 
 [project.theme]

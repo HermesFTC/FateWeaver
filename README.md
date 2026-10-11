@@ -5,7 +5,7 @@
 FateWeaver records data from your FTC robot to a log file and shows it in AdvantageScope.
 You call `Fate.log` with a name and a value, and FateWeaver writes one log file for each OpMode.
 
-The API reference is at [docs.fate.zharel.gay](http://docs.fate.zharel.gay/). The guides are in [`docs/docs`](docs/docs/).
+The guides are at [fate.zharel.gay](https://fate.zharel.gay/) and the API reference is at [fate.zharel.gay/api](https://fate.zharel.gay/api/).
 
 ## Installation
 

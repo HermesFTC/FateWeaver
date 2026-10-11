@@ -1,16 +1,25 @@
-name: Publish Dokka To Pages
+name: Publish docs
 
+# The guides (Zensical) go at the site root and the API reference (Dokka) goes under /api/.
+# Pull requests build both but don't deploy.
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - main
+  pull_request:
+    paths:
+      - 'docs/**'
+      - '.github/workflows/docs.yml'
   workflow_dispatch:
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: read
   pages: write
   id-token: write
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -18,29 +27,42 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           validate-wrappers: true
 
-      - name: Build Dokka documentation
-        run: ./gradlew dokkaGenerate # Or dokkaHtmlMultiModule for multi-module projects
+      - name: Build API reference
+        run: ./gradlew dokkaGenerate
 
-      - name: Upload static files as artifact
-        id: deployment
-        uses: actions/upload-pages-artifact@v3 # or specific "vX.X.X" version tag for this action
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v10.3.0
+
+      # --strict fails the build on broken links and anchors
+      - name: Build guides
+        run: uv run --project docs --locked zensical build --clean --strict -f docs/zensical.toml
+
+      - name: Add API reference to the site
+        run: |
+          mkdir docs/site/api
+          cp -R build/dokka/html/. docs/site/api/
+
+      - name: Upload site
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5
         with:
-          path: ./build/dokka/html
+          path: docs/site
 
   deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
