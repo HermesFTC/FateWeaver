@@ -29,6 +29,7 @@ dependencies {
 ## Features
 
 - Easy-to-use logging API with `FlightRecorder` and `FlightLogChannel`!
+- Live streaming to AdvantageScope with `FlightProjector`, while still recording to a file!
 - Type-safe channels, including support for custom data types using reflection!
 - Modern Vue.js-based web dashboard for downloading and managing logs!
 - Clean `FateRouter` DSL for easily creating your own custom web routes!
@@ -255,6 +256,32 @@ public class MyOpMode extends LinearOpMode {
         // Automatically uses poseSchema!
     }
 }
+```
+
+## Live Streaming to AdvantageScope
+
+`FlightProjector` broadcasts your log over a WebSocket on port `8110` as the OpMode runs, so you can
+watch the robot in AdvantageScope instead of downloading a file afterwards. It streams exactly the
+bytes a `.fate` file contains, and it runs alongside file logging rather than replacing it.
+
+There is nothing to set up on the robot. In AdvantageScope, set the robot address and pick
+`File` → `Connect to Robot` → `FateWeaver`.
+
+> [!WARNING]
+> The FTC 2026-2027 competition manual prohibits live streaming from third-party libraries during
+> competition. **FlightProjector is for testing and tuning only.**
+
+Turn it off from the Driver Station by running the **"Enable/Disable FateWeaver Live"** OpMode in
+the `FateWeaver` group — it shows the current state and flips it on START. There is also a toggle on
+the web dashboard. Both close the server and unbind the port, and the choice survives robot
+restarts, so it is a once-per-event action rather than a per-match one. Recording to files keeps
+working either way.
+
+To rule it out at compile time instead:
+
+```java
+// Recording only, no live streaming, nothing ever binds the port
+FlightRecorder.setMode(LogMode.FILE);
 ```
 
 ## Web Dashboard & Downloading Logs

@@ -68,6 +68,29 @@ object FateDashboard {
                 res.json("[${jsonItems.joinToString(",")}]")
             }
 
+            get("/fate/live/status") { _, res ->
+                res.json(
+                    "{\"enabled\":${LiveSettings.enabled}," +
+                        "\"running\":${FlightProjector.isRunning}," +
+                        "\"port\":${FlightProjector.port}," +
+                        "\"clients\":${FlightProjector.clientCount}}"
+                )
+            }
+
+            // Turning this off closes the server and unbinds the port, and is remembered across
+            // robot restarts. Required before competition matches; see FlightProjector.
+            get("/fate/live/enable") { req, res ->
+                val on = req.query("on") ?: return@get res.badRequest("Missing 'on' parameter")
+                if (on != "true" && on != "false") {
+                    return@get res.badRequest("'on' must be true or false")
+                }
+
+                FlightProjector.setEnabled(on.toBoolean())
+                res.json(
+                    "{\"enabled\":${LiveSettings.enabled},\"running\":${FlightProjector.isRunning}}"
+                )
+            }
+
             get("/fate/logs/download") { req, res ->
                 val fileName = req.query("file") ?: return@get res.badRequest("Missing 'file' parameter")
                 

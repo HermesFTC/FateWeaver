@@ -32,11 +32,26 @@ object FlightRecorder : OpModeManagerNotifier.Notifications, Telemetry {
 
     internal var items = mutableMapOf<String, FlightLogItem>()
 
+    /**
+     * Whether OpMode logs go to a `.fate` file, to connected AdvantageScope clients, or both.
+     *
+     * Setting this to [LogMode.FILE] is the compile-time way to guarantee nothing ever streams.
+     * The dashboard toggle backed by [LiveSettings] is the runtime way, and it persists across
+     * robot restarts. Either one alone is enough to keep [FlightProjector] from binding its port,
+     * which is what the FTC 2026-2027 competition manual requires during competition.
+     */
+    @JvmStatic
+    var mode: LogMode = LogMode.BOTH
+
     @OnCreateEventLoop
     @JvmStatic
     fun registerOpModeListener(context: Context, eventLoop: FtcEventLoop) {
         opModeManager = eventLoop.opModeManager
         opModeManager.registerListener(this)
+
+        // start() is itself a no-op when live streaming has been switched off, so the persisted
+        // setting holds even when mode was left at BOTH.
+        if (mode != LogMode.FILE) FlightProjector.start()
     }
 
     override fun onOpModePreInit(opMode: OpMode?) {
@@ -65,7 +80,7 @@ object FlightRecorder : OpModeManagerNotifier.Notifications, Telemetry {
                 return
             }
 
-            writer = FateLogManager.start(opModeManager.activeOpModeName)
+            writer = FateLogManager.start(opModeManager.activeOpModeName, mode)
             timestampChannel = createChannel("TIMESTAMP", LongSchema)
 
             writeErased("OPMODE_PRE_INIT", System.nanoTime())

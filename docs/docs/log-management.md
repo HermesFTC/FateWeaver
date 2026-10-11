@@ -1,6 +1,61 @@
 # Log management
 
-Getting logs off the robot and into AdvantageScope.
+Getting logs off the robot and into AdvantageScope, live or after the fact.
+
+## Live streaming
+
+`FlightProjector` broadcasts your log to AdvantageScope while the OpMode runs, so you can watch a
+pose move or a PID settle instead of stopping to download a file. It sends exactly the bytes a
+`.fate` file contains, so everything you see in a file is available live.
+
+!!! danger "Turn this off at competition"
+    The 2026-2027 competition manual prohibits live streaming from third-party libraries during
+    competition. **FlightProjector is for testing and tuning only.** Switch it off before matches
+    using the toggle on the dashboard at `192.168.43.1:8080/fate`, which closes the server and
+    unbinds the port. The setting is remembered across robot restarts, so you only have to do it
+    once per event. Recording to files is unaffected and is always allowed.
+
+### Watching a robot
+
+Nothing to set up on the robot: `FlightRecorder` starts the projector on port `8110` when the
+Robot Controller boots, and every OpMode streams as it logs.
+
+In AdvantageScope, set the robot address to `192.168.43.1` (Control Hub) or `192.168.49.1` (phone),
+then `File` → `Connect to Robot` → `FateWeaver`. Channels appear in the tree as they are declared,
+and the timeline follows the robot.
+
+Connecting partway through an OpMode works: the projector replays the channel definitions to every
+new client, so you get a working tree immediately and data from that moment onward. Starting a new
+OpMode while connected resets the tree and keeps streaming.
+
+### Turning it off
+
+Three ways. The first two are remembered across robot restarts, so you turn it off once at the start
+of a competition day rather than before every match.
+
+| How | Where | Reach |
+| --- | --- | --- |
+| **"Enable/Disable FateWeaver Live" OpMode** | Driver Station, `FateWeaver` group | Anywhere. Start it, read the current state, press START to flip it |
+| Dashboard toggle | `192.168.43.1:8080/fate` | Needs a laptop on the robot's network |
+| `FlightRecorder.mode = LogMode.FILE` | Your code | Compile-time; nothing ever binds the port |
+
+The OpMode is the one to use at a competition: you will not have a laptop on the robot's network in
+the queue line, but the Driver Station is always right there.
+
+To confirm streaming is off, run the toggle OpMode and read what it reports, or check that nothing
+answers on port `8110`.
+
+!!! note "What 'off' means here"
+    FateWeaver closes the server and unbinds the port, so there is genuinely nothing listening.
+    This is stricter than FTC Dashboard, which keeps its port bound while disabled and only
+    refuses to act on messages.
+
+### Recording and streaming at once
+
+`LogMode.BOTH` is the default, so you get a `.fate` file and a live stream from the same OpMode. A
+slow or disconnected viewer never affects the robot: entries queue per client, and a client that
+falls too far behind is dropped rather than allowed to hold up your loop. If the projector is off,
+the file is still written.
 
 ## Downloading logs
 
@@ -11,7 +66,7 @@ click one to download it.
 !!! tip "Browser compatibility"
     Any modern browser works. Chrome, Firefox and Safari are the ones we've actually tested.
 
-## Viewing logs with AdvantageScope
+## Viewing saved logs with AdvantageScope
 
 [AdvantageScope](https://github.com/Mechanical-Advantage/AdvantageScope) is what we use to read
 FateWeaver logs. Grab a build from

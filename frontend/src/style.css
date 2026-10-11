@@ -111,3 +111,79 @@ tr:hover {
   color: #666;
   font-style: italic;
 }
+
+.live-panel {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.live-panel.on {
+  border-color: #2e7d4f;
+}
+
+.live-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.live-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.live-heading h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #fff;
+}
+
+.live-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #666;
+  flex-shrink: 0;
+}
+
+.live-dot.on {
+  background: #3ecf7d;
+  box-shadow: 0 0 8px #3ecf7d80;
+}
+
+.live-state {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #aaa;
+}
+
+.live-detail {
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+  color: #aaa;
+}
+
+.live-warning {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+  color: #e0a458;
+}
+
+.live-toggle {
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  flex-shrink: 0;
+}
+
+.live-toggle:disabled {
+  opacity: 0.5;
+  cursor: default;
+}

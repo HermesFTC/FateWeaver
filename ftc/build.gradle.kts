@@ -33,6 +33,12 @@ dependencies {
     implementation(libs.kotlin.reflect)
     implementation(libs.bundles.ftcsdk)
 
+    // The nanohttpd core is already on the classpath via RobotServer; pulling in a second copy
+    // would collide at merge time.
+    implementation(libs.nanohttpd.websocket) {
+        exclude(group = "org.nanohttpd", module = "nanohttpd")
+    }
+
     api(project(":core"))
 }
 

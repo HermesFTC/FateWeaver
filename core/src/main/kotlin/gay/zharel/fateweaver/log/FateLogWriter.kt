@@ -72,16 +72,18 @@ interface LogChannel<T> {
  * }
  * ```
  *
- * @param stream The output stream to write the log data to
- * @constructor Creates a new FateLogWriter that writes to the specified stream
+ * @param sink The destination for the log data
+ * @constructor Creates a new FateLogWriter that writes to the specified sink
  */
-class FateLogWriter(val stream: OutputStream) : AutoCloseable {
+class FateLogWriter(val sink: FateSink) : AutoCloseable {
+    /** Creates a writer that records to [stream], the usual case for file logging. */
+    constructor(stream: OutputStream) : this(StreamSink(stream))
+
     init {
         val headerBuffer = ByteBuffer.allocate(4)
             .put(MAGIC.toByteArray(Charsets.UTF_8))
             .putShort(VERSION)
-        headerBuffer.flip()
-        stream.write(headerBuffer)
+        sink.header(headerBuffer.array())
     }
 
     private val channels = mutableListOf<WriterChannel<*>>()
@@ -123,8 +125,7 @@ class FateLogWriter(val stream: OutputStream) : AutoCloseable {
         require(!buffer.hasRemaining()) {
             "encoded schema does not match reported size: ${buffer.remaining()} bytes remaining"
         }
-        buffer.flip()
-        this.stream.write(buffer)
+        sink.schemaEntry(buffer.array())
 
         return channel
     }
@@ -233,8 +234,7 @@ class FateLogWriter(val stream: OutputStream) : AutoCloseable {
         require(!buffer.hasRemaining()) {
             "encoded object does not match reported size: ${buffer.remaining()} bytes remaining"
         }
-        buffer.flip()
-        this.stream.write(buffer)
+        sink.messageEntry(buffer.array())
     }
 
     /**
@@ -340,14 +340,14 @@ class FateLogWriter(val stream: OutputStream) : AutoCloseable {
     }
 
     /**
-     * Closes the log writer and flushes any remaining data to the underlying stream.
+     * Closes the log writer and flushes any remaining data to the underlying sink.
      *
      * After calling this method, no further write operations should be performed.
-     * The underlying stream is also closed.
+     * The underlying sink is also closed.
      */
     override fun close() {
-        stream.flush()
-        stream.close()
+        sink.flush()
+        sink.close()
     }
 
     /**
@@ -411,7 +411,7 @@ class FateLogWriter(val stream: OutputStream) : AutoCloseable {
         return addChannel(WriterChannel(channel.name, channel.schema))
     }
 
-    override fun toString() = "LogWriter($stream)"
+    override fun toString() = "LogWriter($sink)"
 
     /**
      * Checks if a channel with the same name as the provided channel exists in this writer.
@@ -475,22 +475,3 @@ class FateLogWriter(val stream: OutputStream) : AutoCloseable {
 @JvmSynthetic
 inline fun <reified T : Any> FateLogWriter.write(channelName: String, obj: T) =
     write(channelName, obj, typeOf<T>())
-
-/**
- * Extension function to write a [ByteBuffer] to an [OutputStream].
- *
- * This is an internal utility function used by [FateLogWriter] to write binary data
- * efficiently.
- * It requires that the buffer has a backing array for direct access.
- *
- * @receiver The output stream to write to
- * @param buffer The byte buffer to write
- * @throws IllegalStateException if the buffer doesn't have a backing array
- */
-internal fun OutputStream.write(buffer: ByteBuffer) {
-    if (!buffer.hasArray()) {
-        error { "LogWriter only supports direct byte buffer access" }
-    }
-
-    write(buffer.array())
-}
