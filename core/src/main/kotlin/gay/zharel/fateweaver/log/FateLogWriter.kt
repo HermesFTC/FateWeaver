@@ -10,6 +10,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.reflect.KClass
 import kotlin.reflect.KType
 import kotlin.reflect.typeOf
+import kotlin.time.TimeSource
 
 /** Magic bytes that identify a FateWeaver log file. */
 const val MAGIC = "RR"
@@ -65,6 +66,12 @@ interface LogChannel<T> {
  * for a channel that is already defined. Since version 3, every message entry also carries the time
  * it was logged, in nanoseconds, so readers can line up channels without a timestamp channel.
  *
+ * ## Timestamps
+ *
+ * [write] without a timestamp stamps the entry with the time elapsed on [timeSource] since this
+ * writer was created. Only differences between stamps mean anything. A writer fed by a
+ * [gay.zharel.fateweaver.telemetry.FateLogBackend] gets its stamps from the registry instead.
+ *
  * ## Threading
  *
  * A writer can be shared between threads. The sink receives entries one at a time, and a channel's
@@ -83,10 +90,21 @@ interface LogChannel<T> {
  * ```
  *
  * @param sink Where the log bytes go
+ * @param timeSource Stamps entries written without a timestamp. Defaults to [TimeSource.Monotonic].
  */
-class FateLogWriter(val sink: FateSink) : AutoCloseable {
+class FateLogWriter @JvmOverloads constructor(
+    val sink: FateSink,
+    val timeSource: TimeSource = TimeSource.Monotonic
+) : AutoCloseable {
     /** Creates a writer that writes to [stream], as in file logging. */
-    constructor(stream: OutputStream) : this(StreamSink(stream))
+    @JvmOverloads
+    constructor(stream: OutputStream, timeSource: TimeSource = TimeSource.Monotonic) :
+        this(StreamSink(stream), timeSource)
+
+    private val origin = timeSource.markNow()
+
+    /** Nanoseconds elapsed on [timeSource] since this writer was created. */
+    fun timestamp(): Long = origin.elapsedNow().inWholeNanoseconds
 
     init {
         val headerBuffer = ByteBuffer.allocate(4)
@@ -216,7 +234,7 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
         createChannel(name, FateSchema.schemaOfType(typeOf<T>()) as FateSchema<T>)
 
     /**
-     * Writes an object to the specified channel, stamped with the current [System.nanoTime].
+     * Writes an object to the specified channel, stamped with the current [timestamp].
      *
      * If this writer has no channel with that name yet, it adds one first.
      *
@@ -224,14 +242,14 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
      * @param channel The channel to write to
      * @param obj The object to write
      */
-    fun <T> write(channel: LogChannel<T>, obj: T) = write(channel, obj, System.nanoTime())
+    fun <T> write(channel: LogChannel<T>, obj: T) = write(channel, obj, timestamp())
 
     /**
      * Writes an object to the specified channel, stamped with [timestamp].
      *
      * Use this when the value was produced earlier than it is written, or when several writers must
-     * share one timestamp. Take [timestamp] from the same clock for every write to a log, because
-     * readers compare them.
+     * share one timestamp. Take it from the same clock for every write to a log, such as this
+     * writer's [timestamp], because readers compare them.
      *
      * @param T The type of the object being written
      * @param channel The channel to write to
@@ -437,7 +455,7 @@ class FateLogWriter(val sink: FateSink) : AutoCloseable {
      */
     operator fun contains(channel: LogChannel<*>) = channels.any { it.name == channel.name }
 
-    companion object Companion {
+    companion object {
         /**
          * Creates a writer that logs to [file]. The file is created if it doesn't exist and
          * overwritten if it does.

@@ -43,10 +43,7 @@ object FlightProjector : FateSink {
      */
     private const val CLIENT_QUEUE_DEPTH = 2048
 
-    /**
-     * The text frame a client sends to have the header and schema entries replayed, when it
-     * receives a message for a channel it has no schema for.
-     */
+    /** The text frame a client sends to have the header and schema entries replayed. */
     const val RESYNC_REQUEST = "resync"
 
     private val lock = Any()
@@ -193,9 +190,8 @@ object FlightProjector : FateSink {
     }
 
     override fun schemaEntry(bytes: ByteArray) {
-        // The add and the broadcast share one lock hold so attach() can't run between them. A
-        // client attached in that gap would get this entry in its replay and again from the
-        // broadcast, and every channel index after it would be off by one.
+        // One lock hold, so a client attached between the add and the broadcast can't get this
+        // entry twice and shift every later channel index.
         val behind = synchronized(lock) {
             schemaEntries.add(bytes)
             broadcast(bytes)
@@ -204,7 +200,7 @@ object FlightProjector : FateSink {
     }
 
     override fun messageEntry(bytes: ByteArray) {
-        // Under the lock so a resync replay can't have a live entry land in the middle of it.
+        // Under the lock so no live entry lands in the middle of a replay.
         val behind = synchronized(lock) { broadcast(bytes) }
         dropBehind(behind)
     }
@@ -226,10 +222,8 @@ object FlightProjector : FateSink {
      * ready. Entries sent before a header can't be decoded and would only make a reader disconnect
      * and retry.
      *
-     * Callers hold [lock]. It only queues, so it never blocks. It
-     * returns the clients that fell behind instead of shutting them down, because closing a socket
-     * writes to it and a stalled client could hold the lock. Pass the result to [dropBehind] after
-     * releasing the lock.
+     * Callers hold [lock]. Returns the clients that fell behind, for [dropBehind] to close after
+     * the lock is released, since closing writes to the socket and a stalled client could block.
      */
     private fun broadcast(bytes: ByteArray, primes: Boolean = false): List<ProjectorSocket> {
         var behind: MutableList<ProjectorSocket>? = null
@@ -269,15 +263,10 @@ object FlightProjector : FateSink {
     }
 
     /**
-     * Sends [client] the current header and schema entries again, for a client that received a
-     * message for a channel it has no schema for.
+     * Sends [client] the current header and schema entries again.
      *
-     * The header comes first because the client numbers channels by the schema entries it has seen.
-     * It resets its channel table on a header, so the replay rebuilds the table from scratch instead
-     * of appending to it. Its log is untouched. The replay is queued under [lock], so no live entry
-     * can land between its parts.
-     *
-     * Does nothing if no log is in progress, or if [client] has been dropped.
+     * The header comes first so the client resets its channel table and rebuilds it from the
+     * replay. Does nothing if no log is in progress or [client] has been dropped.
      */
     private fun resync(client: ProjectorSocket) {
         val replayed = synchronized(lock) { client in clients && replay(client) }
@@ -289,8 +278,8 @@ object FlightProjector : FateSink {
     }
 
     /**
-     * Queues the header and every schema entry for [client] and marks it primed. Call under [lock].
-     * Returns `false` if the client's queue filled up, and `true` if there was nothing to send.
+     * Queues the header and schema entries for [client] and marks it primed. Call under [lock].
+     * Returns `false` if the client's queue filled up.
      */
     private fun replay(client: ProjectorSocket): Boolean {
         val current = header ?: return true
