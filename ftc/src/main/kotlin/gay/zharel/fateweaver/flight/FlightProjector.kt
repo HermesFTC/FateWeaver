@@ -43,6 +43,12 @@ object FlightProjector : FateSink {
      */
     private const val CLIENT_QUEUE_DEPTH = 2048
 
+    /**
+     * The text frame a client sends to have the header and schema entries replayed, when it
+     * receives a message for a channel it has no schema for.
+     */
+    const val RESYNC_REQUEST = "resync"
+
     private val lock = Any()
     private var header: ByteArray? = null
     private val schemaEntries = mutableListOf<ByteArray>()
@@ -175,22 +181,33 @@ object FlightProjector : FateSink {
     // --- FateSink ---
 
     override fun header(bytes: ByteArray) {
-        synchronized(lock) {
+        val behind = synchronized(lock) {
             // A new OpMode means a new log on the same connection. AdvantageScope resets its
             // channel table when it sees "RR" mid-stream, so the old preamble goes with it.
             header = bytes
             schemaEntries.clear()
+            // A client can only join at a header, so clients still waiting start receiving here.
+            broadcast(bytes, primes = true)
         }
-        // A client can only join at a header, so clients still waiting start receiving here.
-        broadcast(bytes, primes = true)
+        dropBehind(behind)
     }
 
     override fun schemaEntry(bytes: ByteArray) {
-        synchronized(lock) { schemaEntries.add(bytes) }
-        broadcast(bytes)
+        // The add and the broadcast share one lock hold so attach() can't run between them. A
+        // client attached in that gap would get this entry in its replay and again from the
+        // broadcast, and every channel index after it would be off by one.
+        val behind = synchronized(lock) {
+            schemaEntries.add(bytes)
+            broadcast(bytes)
+        }
+        dropBehind(behind)
     }
 
-    override fun messageEntry(bytes: ByteArray) = broadcast(bytes)
+    override fun messageEntry(bytes: ByteArray) {
+        // Under the lock so a resync replay can't have a live entry land in the middle of it.
+        val behind = synchronized(lock) { broadcast(bytes) }
+        dropBehind(behind)
+    }
 
     override fun flush() {}
 
@@ -208,15 +225,28 @@ object FlightProjector : FateSink {
      * Clients that attached while no log was in progress are skipped until [primes] marks them
      * ready. Entries sent before a header can't be decoded and would only make a reader disconnect
      * and retry.
+     *
+     * Callers hold [lock]. It only queues, so it never blocks. It
+     * returns the clients that fell behind instead of shutting them down, because closing a socket
+     * writes to it and a stalled client could hold the lock. Pass the result to [dropBehind] after
+     * releasing the lock.
      */
-    private fun broadcast(bytes: ByteArray, primes: Boolean = false) {
+    private fun broadcast(bytes: ByteArray, primes: Boolean = false): List<ProjectorSocket> {
+        var behind: MutableList<ProjectorSocket>? = null
         for (client in clients) {
             if (primes) client.primed = true
             if (!client.primed) continue
             if (!client.offer(bytes)) {
-                RobotLog.ww(TAG, "client %s fell behind, dropping", client.name)
-                client.shutdown()
+                (behind ?: mutableListOf<ProjectorSocket>().also { behind = it }).add(client)
             }
+        }
+        return behind ?: emptyList()
+    }
+
+    private fun dropBehind(behind: List<ProjectorSocket>) {
+        for (client in behind) {
+            RobotLog.ww(TAG, "client %s fell behind, dropping", client.name)
+            client.shutdown()
         }
     }
 
@@ -232,15 +262,44 @@ object FlightProjector : FateSink {
      */
     private fun attach(client: ProjectorSocket) {
         synchronized(lock) {
-            val current = header
-            if (current != null) {
-                client.offer(current)
-                schemaEntries.forEach { client.offer(it) }
-                client.primed = true
-            }
+            replay(client)
             clients.add(client)
         }
         RobotLog.vv(TAG, "client %s attached (%d total)", client.name, clientCount)
+    }
+
+    /**
+     * Sends [client] the current header and schema entries again, for a client that received a
+     * message for a channel it has no schema for.
+     *
+     * The header comes first because the client numbers channels by the schema entries it has seen.
+     * It resets its channel table on a header, so the replay rebuilds the table from scratch instead
+     * of appending to it. Its log is untouched. The replay is queued under [lock], so no live entry
+     * can land between its parts.
+     *
+     * Does nothing if no log is in progress, or if [client] has been dropped.
+     */
+    private fun resync(client: ProjectorSocket) {
+        val replayed = synchronized(lock) { client in clients && replay(client) }
+        if (replayed) {
+            RobotLog.vv(TAG, "client %s resynced", client.name)
+        } else if (client in clients) {
+            dropBehind(listOf(client))
+        }
+    }
+
+    /**
+     * Queues the header and every schema entry for [client] and marks it primed. Call under [lock].
+     * Returns `false` if the client's queue filled up, and `true` if there was nothing to send.
+     */
+    private fun replay(client: ProjectorSocket): Boolean {
+        val current = header ?: return true
+        if (!client.offer(current)) return false
+        for (entry in schemaEntries) {
+            if (!client.offer(entry)) return false
+        }
+        client.primed = true
+        return true
     }
 
     private fun detach(client: ProjectorSocket) {
@@ -310,8 +369,14 @@ object FlightProjector : FateSink {
             initiatedByRemote: Boolean
         ) = shutdown()
 
-        /** Clients are read-only, so incoming messages are ignored. */
-        override fun onMessage(message: NanoWSD.WebSocketFrame) {}
+        /** The only message a client sends is [RESYNC_REQUEST]. Anything else is ignored. */
+        override fun onMessage(message: NanoWSD.WebSocketFrame) {
+            if (message.opCode == NanoWSD.WebSocketFrame.OpCode.Text &&
+                message.textPayload == RESYNC_REQUEST
+            ) {
+                resync(this)
+            }
+        }
 
         override fun onPong(pong: NanoWSD.WebSocketFrame) {}
 
