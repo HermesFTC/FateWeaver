@@ -41,6 +41,12 @@ You can connect partway through an OpMode. The projector replays the schemas to 
 you get a full tree right away and data from that moment on. If a new OpMode starts while you are
 connected, the tree resets and streaming continues.
 
+If a client receives a message for a channel it has no schema for, it can send the text frame
+`resync` (`FlightProjector.RESYNC_REQUEST`). The projector replies with the header and every schema
+entry again. The client resets its channel table and rebuilds it from the replay, and the log it has
+already received is untouched. Any other message from a client is ignored.
+
+
 ### Turning it off
 
 There are three ways. The first two are remembered across robot restarts, so you turn streaming off
@@ -73,6 +79,14 @@ It is read when an OpMode starts, so set it before the OpMode you want to affect
 slow or disconnected viewer does not slow your robot. Each client has a queue of 2048 entries, and a
 client that falls behind that is dropped instead of holding up your loop. If the projector is off,
 the file is still written.
+
+### Timestamps
+
+An entry written without a timestamp is stamped with the time elapsed since its writer was created.
+`FateLogWriter` takes an optional `timeSource` (default `TimeSource.Monotonic`) and exposes
+`timestamp()`, so you can stamp a value yourself from the same clock. Only differences between
+timestamps in one log mean anything. A writer fed by the telemetry registry takes its stamps from
+the registry instead.
 
 ## Downloading logs
 

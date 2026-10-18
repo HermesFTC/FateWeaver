@@ -33,6 +33,7 @@ dependencies {
 - Group values into tables like `Drive/leftVelocity`, which show up as folders in AdvantageScope.
 - A log file for every OpMode, with old logs deleted once the folder passes 250 MB.
 - Live streaming to AdvantageScope while the file is still being recorded.
+- `FateFtcTelemetry`, an FTC `Telemetry` adapter, so existing `telemetry.addData` calls can feed the log.
 - A web dashboard on the Robot Controller for downloading logs.
 - Custom serialization with `CustomStructSchema`.
 
@@ -111,7 +112,7 @@ The log format is version 3, so you need an AdvantageScope build with FateWeaver
 
 ## Live streaming
 
-`FlightProjector` streams the log to AdvantageScope over a WebSocket on port 8110 while the OpMode runs. It sends the same bytes as the `.fate` file, and clients that connect late get the schemas replayed. In AdvantageScope, set the robot address and choose `File` → `Connect to Robot` → `FateWeaver`.
+`FlightProjector` streams the log to AdvantageScope over a WebSocket on port 8110 while the OpMode runs. It sends the same bytes as the `.fate` file, and clients that connect late get the schemas replayed, and a client can send the text frame `resync` to have them replayed again. In AdvantageScope, set the robot address and choose `File` → `Connect to Robot` → `FateWeaver`.
 
 > [!WARNING]
 > The FTC 2026-2027 competition manual prohibits live streaming from third-party libraries during

@@ -159,6 +159,63 @@ hold one in a field.
 `FateTable` lives in `gay.zharel.fateweaver.telemetry`, next to `Fate`. Java boxes the primitives for
 you.
 
+## Logging through FTC telemetry
+
+If your code already calls `telemetry.addData`, you can send those items to the log without
+rewriting them. `FateFtcTelemetry` implements the FTC SDK `Telemetry` interface, so you can hand it
+to anything that takes one, such as FTC Dashboard's `MultipleTelemetry`:
+
+=== "Kotlin"
+
+    ```kotlin
+    telemetry = MultipleTelemetry(telemetry, FateFtcTelemetry)
+    ```
+
+=== "Java"
+
+    ```java
+    telemetry = new MultipleTelemetry(telemetry, FateFtcTelemetry.INSTANCE);
+    ```
+
+It behaves like the SDK's telemetry. `addData` only queues an item, and nothing is logged until
+`update()`, which evaluates every value producer and logs each item under its caption. A caption
+with slashes, like `"Drive/leftPower"`, goes into the matching table.
+
+- An item with a format is logged as the formatted string. Otherwise the raw value is logged and
+  its schema is inferred. `null` values are skipped.
+- `telemetry.log()` messages go to the string channel `Telemetry/Log`.
+- Display settings (separators, display format, transmission interval) are stored but do nothing,
+  and `speak` does nothing.
+- A value producer that throws is skipped with a warning instead of stopping your loop.
+
+`FateFtcTelemetry` is in `gay.zharel.fateweaver.flight`.
+
+### Showing logged values on the Driver Station
+
+`FtcTelemetryBackend` goes the other way. It is a backend that sends everything you log through
+`Fate` to an FTC `Telemetry`, so values you log once also show up on the Driver Station:
+
+=== "Kotlin"
+
+    ```kotlin
+    Fate.registry.register(FtcTelemetryBackend(telemetry))
+    ```
+
+=== "Java"
+
+    ```java
+    Fate.getRegistry().register(new FtcTelemetryBackend(telemetry));
+    ```
+
+Each logged value calls `telemetry.addData(path, value)` with its full path as the caption. You
+still call `telemetry.update()` yourself to push them to the screen. The value is passed as is, so
+there is no schema or number formatting. Remove it with `Fate.registry.unregister(backend)`. It is
+in `gay.zharel.fateweaver.flight`.
+
+!!! warning "Don't use both on one telemetry"
+    Registering `FtcTelemetryBackend` on a telemetry that also contains `FateFtcTelemetry`, for
+    example through `MultipleTelemetry`, logs each value into itself. Use one direction or the other.
+
 ## Path naming convention
 
 Slashes in a path become folders in AdvantageScope. A table named `Motors` and a name of
